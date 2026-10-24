@@ -1,0 +1,21 @@
+{
+  "name": "scrat-threads",
+  "version": "1.0.0",
+  "description": "Ứng dụng cào dữ liệu Threads với giao diện block thân thiện",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test test/*.test.js",
+    "setup": "npx playwright install chromium"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "express": "^5.3.0",
+    "playwright": "^1.63.0"
+  }
+}
