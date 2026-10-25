@@ -175,6 +175,11 @@
       body: opts.body ? JSON.stringify(opts.body) : undefined,
     });
     const data = await res.json().catch(() => ({}));
+    if (res.status === 401 && data.auth) {
+      // Phiên hết hạn: nhớ trang đang xem rồi chuyển tới trang đăng nhập
+      try { sessionStorage.setItem('st-next', location.hash); } catch { /* bỏ qua */ }
+      location.href = '/login.html';
+    }
     if (!res.ok) throw new Error(data.error || `Lỗi ${res.status}`);
     return data;
   }
@@ -980,6 +985,7 @@
       <button class="btn sm" data-act="export-sel" data-fmt="xlsx">${ic('sheet', 'sm')}Excel</button>
       <button class="btn sm" data-act="export-sel" data-fmt="csv">${ic('download', 'sm')}CSV</button>
       <button class="btn sm" data-act="export-sel" data-fmt="json">${ic('download', 'sm')}JSON</button>
+      <button class="btn sm" data-act="scrape-replies-sel" title="Cào bình luận trả lời cho các bài đã chọn">${ic('reply', 'sm')}<span class="lbl">Cào trả lời</span></button>
       <button class="btn sm danger" data-act="delete-sel">${ic('trash', 'sm')}<span class="lbl">Xóa</span></button>
       <button class="btn sm icon" data-act="clear-sel" aria-label="Bỏ chọn">${ic('x', 'sm')}</button>`;
   }
@@ -1194,7 +1200,7 @@
     const s = S.settings;
     const theme = store.get('theme', 'auto');
     const sw = (k) => `<label class="switch"><input type="checkbox" data-s="${k}" ${s[k] ? 'checked' : ''}/><span></span></label>`;
-    const numIn = (k, min, max, step = 1, suffix = '') => `<div class="input-ic"><input class="input" type="number" data-s="${k}" min="${min}" max="${max}" step="${step}" value="${s[k]}" />${suffix ? `<span class="muted" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);font-size:12px;font-weight:800">${suffix}</span>` : ''}</div>`;
+    const numIn = (k, min, max, step = 1, suffix = '') => `<div style="position:relative"><input class="input" type="number" data-s="${k}" min="${min}" max="${max}" step="${step}" value="${s[k]}" />${suffix ? `<span class="muted" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);font-size:12px;font-weight:800">${suffix}</span>` : ''}</div>`;
 
     $('#view').innerHTML = `
       <div class="bento">
@@ -1248,6 +1254,7 @@
             <button class="btn" data-act="export" data-kind="posts" data-fmt="json">${ic('download')}Sao lưu JSON</button>
             <button class="btn danger" data-act="clear-all">${ic('trash')}Xóa toàn bộ</button>
           </div>
+          <div class="set-row" style="margin-top:12px;border-top:1px dashed var(--line)" id="auth-row"></div>
         </section>
       </div>
       <div class="bulkbar" id="save-bar">
@@ -1257,6 +1264,14 @@
       </div>`;
 
     drawLogin();
+    api('/auth').then((a) => {
+      const row = $('#auth-row');
+      if (!row) return;
+      row.innerHTML = a.enabled
+        ? `<div class="txt"><b>${ic('shield', 'sm')} Mật khẩu app đang bật</b><span>Đặt bằng biến môi trường APP_PASSWORD</span></div>
+           <div class="ctl auto"><button class="btn sm" data-act="app-logout">${ic('x', 'sm')}Thoát</button></div>`
+        : `<div class="txt"><b>${ic('shield', 'sm')} Chưa đặt mật khẩu app</b><span>Nếu mở app ra mạng, hãy chạy với <kbd>APP_PASSWORD=…</kbd> để chặn người lạ</span></div>`;
+    }).catch(() => {});
     api('/login').then((st) => { S.login = st; drawLogin(); }).catch(() => {});
 
     $$('#view [data-s]').forEach((el) => {
@@ -1513,6 +1528,17 @@
     },
     'clear-sel': () => { S.lib.selected.clear(); drawPosts(); },
     'export-sel': (el) => download(`/api/export/posts.${el.dataset.fmt}?ids=${encodeURIComponent([...S.lib.selected].join(','))}`),
+    'scrape-replies-sel': async () => {
+      const posts = [...S.lib.selected].map(findPost).filter(Boolean);
+      if (!posts.length) return;
+      if (posts.length > 200) return toast('Tối đa 200 bài mỗi lần', 'err');
+      const job = await startJob('batch', { items: posts.map((p) => p.url).join('\n'), limit: 50 });
+      if (job) { S.lib.selected.clear(); drawPosts(); }
+    },
+    'app-logout': async () => {
+      await api('/auth/logout', { method: 'POST' });
+      location.href = '/login.html';
+    },
     'delete-sel': async () => {
       const n = S.lib.selected.size;
       if (!(await confirmBox({ title: `Xóa ${n} bài viết?`, text: 'Thao tác này không thể hoàn tác.', ok: 'Xóa', danger: true, icon: 'trash' }))) return;

@@ -248,7 +248,7 @@ kbd {
 .input:focus, .select:focus, .textarea:focus { border-color: var(--primary); background: var(--surface); box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 15%, transparent); }
 .textarea { resize: vertical; min-height: 140px; font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 13px; line-height: 1.6; }
 .input-ic { position: relative; }
-.input-ic .ic { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.input-ic > .ic { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
 .input-ic .input { padding-left: 40px; }
 .select { appearance: none; padding-right: 36px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a85a3' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; background-size: 16px; }
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
@@ -421,7 +421,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   transition: transform .3s cubic-bezier(.34,1.56,.64,1), opacity .2s, visibility .3s;
 }
 .bulkbar.on { transform: translate(-50%, 0); visibility: visible; opacity: 1; }
-.bulkbar b { font-weight: 900; margin-right: 6px; }
+.bulkbar b { font-weight: 900; margin-right: 6px; white-space: nowrap; }
 .bulkbar .btn { background: color-mix(in srgb, var(--bg) 14%, transparent); color: var(--bg); border-color: transparent; }
 .bulkbar .btn.danger { color: #ff8b8b; }
 

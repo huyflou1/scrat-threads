@@ -179,7 +179,11 @@ class JobManager extends EventEmitter {
     let posts = [...session.acc.posts.values()];
     if (filter) posts = posts.filter(filter);
     if (parentCode) {
-      posts = posts.map((p) => (p.code !== parentCode ? { ...p, parent_code: parentCode } : p));
+      // Trang bài viết hiện cả các bài phía trên trong chuỗi thread; chỉ bài trả lời
+      // đăng SAU bài chính mới là trả lời của nó
+      const main = posts.find((p) => p.code === parentCode);
+      const after = (p) => !main || !main.published_at || !p.published_at || p.published_at >= main.published_at;
+      posts = posts.map((p) => (p.code !== parentCode && p.is_reply && after(p) ? { ...p, parent_code: parentCode } : p));
     }
     const addedIds = [];
     const added = this.store.upsertPosts(posts, { source, addedIds });

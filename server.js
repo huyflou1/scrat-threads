@@ -9,6 +9,7 @@ const { filterPosts, filterProfiles, toCSV, toJSON, toXLSXFile, engagement } = r
 const { seedDemo } = require('./src/demo');
 const { Scheduler } = require('./src/schedules');
 const { scheduleNotification } = require('./src/notify');
+const { createAuth } = require('./src/auth');
 const { parseCookies } = require('./src/scraper');
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -21,7 +22,10 @@ const jobs = new JobManager(store, scraper);
 const scheduler = new Scheduler(store, jobs);
 
 const app = express();
+const auth = createAuth(process.env.APP_PASSWORD || '');
 app.use(express.json({ limit: '2mb' }));
+app.use(auth.middleware);
+auth.routes(app);
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
 
 const wrap = (fn) => (req, res) => {
@@ -309,7 +313,11 @@ setInterval(() => broadcast('ping', {}), 25000).unref();
 app.use('/api', (req, res) => res.status(404).json({ error: 'Không tìm thấy API' }));
 
 const server = app.listen(PORT, HOST, () => {
-  console.log(`\n  🌰 Scrat Threads đang chạy tại http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}\n`);
+  console.log(`\n  🌰 Scrat Threads đang chạy tại http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
+  console.log(auth.enabled ? '  🔒 Đã bật mật khẩu (APP_PASSWORD)\n' : '');
+  if (!auth.enabled && !['127.0.0.1', 'localhost', '::1'].includes(HOST)) {
+    console.warn('  ⚠️  App đang mở ra mạng mà KHÔNG có mật khẩu. Đặt APP_PASSWORD để bảo vệ dữ liệu và cookie đăng nhập.\n');
+  }
 });
 
 async function shutdown() {

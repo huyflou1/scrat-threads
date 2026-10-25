@@ -77,9 +77,16 @@ class Store {
         added++;
         if (meta.addedIds) meta.addedIds.push(p.id);
       }
+      // Nguồn sau có thể thiếu trường (vd: trang bài viết không có tên hiển thị) —
+      // không ghi đè giá trị đã biết bằng chuỗi rỗng / null
+      const fresh = {};
+      for (const [k, v] of Object.entries(p)) {
+        if ((v === '' || v == null) && prev && prev[k]) continue;
+        fresh[k] = v;
+      }
       this.data.posts[p.id] = {
         ...prev,
-        ...p,
+        ...fresh,
         // Giữ nguyên mối quan hệ/nguồn gốc đã biết
         parent_code: p.parent_code || (prev && prev.parent_code) || null,
         sources: [...new Set([...((prev && prev.sources) || []), ...(meta.source ? [meta.source] : [])])],
