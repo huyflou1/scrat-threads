@@ -123,6 +123,11 @@
     return `<img class="avatar ${size}" src="${esc(img(u.avatar))}" alt="" loading="lazy" referrerpolicy="no-referrer" data-fb="${esc(fb)}" onerror="this.outerHTML=this.dataset.fb">`;
   }
 
+  // Chỉ cho phép link http(s) — chặn javascript:, data:… trong dữ liệu cào về / file khôi phục
+  const safeUrl = (u) => {
+    try { const x = new URL(String(u || ''), location.href); return /^https?:$/.test(x.protocol) ? x.href : '#'; } catch { return '#'; }
+  };
+
   // Ảnh từ CDN của Meta phải đi qua proxy của máy chủ
   const img = (u) => (u ? '/api/img?u=' + encodeURIComponent(u) : '');
 
@@ -323,7 +328,7 @@
     const v = $('#view');
     if (!S.stats) v.innerHTML = `<div class="bento">${'<div class="skel span-3"></div>'.repeat(4)}<div class="skel span-8" style="min-height:260px"></div><div class="skel span-4"></div></div>`;
     try {
-      S.stats = await api('/stats');
+      S.stats = await api('/stats?tz=' + new Date().getTimezoneOffset());
       cachePosts(S.stats.topPosts);
     } catch (e) {
       v.innerHTML = empty('Không kết nối được máy chủ', esc(e.message));
@@ -376,6 +381,8 @@
           <div class="list" id="home-jobs">${homeJobs(st.recentJobs)}</div>
         </section>
 
+        ${heatBlock(st.heat)}
+
         <section class="block span-4">
           <div class="block-head">${tile('users', 'sky', 'sm')}<div><h3>Tác giả nổi bật</h3><p>Theo tương tác</p></div></div>
           <div class="list">${st.topAuthors.length ? st.topAuthors.map((a, i) => `
@@ -416,6 +423,39 @@
       if (await startJob(d.type, { ...d.body, limit: 50 })) input.value = '';
       hint();
     };
+  }
+
+  const DAYS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+  const DAY_FULL = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ Nhật'];
+  const slot = (b) => `${String(b * 3).padStart(2, '0')}–${String(b * 3 + 3).padStart(2, '0')}h`;
+
+  /** Bản đồ nhiệt: tương tác trung bình mỗi bài theo ngày trong tuần × khung giờ. */
+  function heatBlock(heat) {
+    const head = `<div class="block-head">${tile('calendar', 'peach', 'sm')}<div><h3>Giờ đăng hiệu quả</h3><p>Tương tác trung bình mỗi bài gốc, theo giờ máy bạn</p></div></div>`;
+    const cells = heat.flatMap((row, d) => row.map((c, b) => ({ ...c, d, b })));
+    const total = cells.reduce((a, c) => a + c.n, 0);
+    if (total < 3) return `<section class="block span-12">${head}${empty('Chưa đủ dữ liệu', 'Cần ít nhất 3 bài viết có ngày đăng để tìm khung giờ tốt nhất.', '', true)}</section>`;
+    const max = Math.max(1, ...cells.map((c) => c.avg));
+    // Khung tốt nhất: ưu tiên ô có từ 2 bài để tránh một bài “ăn may”
+    const pool = cells.filter((c) => c.n >= 2).length ? cells.filter((c) => c.n >= 2) : cells.filter((c) => c.n);
+    const best = pool.reduce((a, c) => (c.avg > a.avg ? c : a));
+    const busiest = cells.reduce((a, c) => (c.n > a.n ? c : a));
+    return `<section class="block span-12">${head}
+      <div class="heat-wrap">
+        <div class="heat" role="table" aria-label="Bản đồ giờ đăng">
+          <span></span>${Array.from({ length: 8 }, (_, b) => `<span class="heat-x">${b * 3}h</span>`).join('')}
+          ${heat.map((row, d) => `<span class="heat-y">${DAYS[d]}</span>${row.map((c, b) => {
+            const lvl = c.n ? 0.15 + 0.85 * (c.avg / max) : 0;
+            return `<i class="${c.n ? '' : 'none'} ${best.d === d && best.b === b ? 'best' : ''}" style="--l:${lvl.toFixed(2)}" title="${DAY_FULL[d]}, ${slot(b)}: ${c.n} bài${c.n ? ` · TB ${num(c.avg)} tương tác` : ''}"></i>`;
+          }).join('')}`).join('')}
+        </div>
+        <div class="heat-side">
+          <div class="callout c-mint">${ic('party')}<div><b>Khung giờ vàng</b><br>${DAY_FULL[best.d]}, ${slot(best.b)}<br><span class="muted">TB ${num(best.avg)} tương tác · ${best.n} bài${best.n >= 2 ? ' · chỉ xét ô có từ 2 bài' : ''}</span></div></div>
+          <div class="callout c-sky">${ic('chart')}<div><b>Đăng nhiều nhất</b><br>${DAY_FULL[busiest.d]}, ${slot(busiest.b)}<br><span class="muted">${busiest.n} bài</span></div></div>
+          <div class="heat-legend"><span>Ít</span><i style="--l:.15"></i><i style="--l:.45"></i><i style="--l:.75"></i><i style="--l:1"></i><span>Nhiều</span></div>
+        </div>
+      </div>
+    </section>`;
   }
 
   function statBlock(icon, color, val, label, href) {
@@ -1020,8 +1060,8 @@
       <div class="drawer-body">
         ${p.parent_code ? `<div class="callout c-sky">${ic('reply')}<div>Trả lời cho bài viết <b>${esc(p.parent_code)}</b>${p.reply_to ? ` của @${esc(p.reply_to)}` : ''}</div></div>` : ''}
         <p class="detail-text">${richText(p.text) || '<span class="muted">(Bài viết không có chữ)</span>'}</p>
-        ${p.media && p.media.length ? `<div class="detail-media">${p.media.map((m) => `<a href="${esc(m.url)}" target="_blank" rel="noopener noreferrer" style="background-image:url('${esc(img(m.thumb))}')">${m.type === 'video' ? ic('video', 'lg') : ''}</a>`).join('')}</div>` : ''}
-        ${p.link ? `<a class="callout c-mint" href="${esc(p.link)}" target="_blank" rel="noopener noreferrer">${ic('link')}<div style="word-break:break-all">${esc(p.link)}</div></a>` : ''}
+        ${p.media && p.media.length ? `<div class="detail-media">${p.media.map((m) => `<a href="${esc(safeUrl(m.url))}" target="_blank" rel="noopener noreferrer" style="background-image:url('${esc(img(m.thumb))}')">${m.type === 'video' ? ic('video', 'lg') : ''}</a>`).join('')}</div>` : ''}
+        ${p.link ? `<a class="callout c-mint" href="${esc(safeUrl(p.link))}" target="_blank" rel="noopener noreferrer">${ic('link')}<div style="word-break:break-all">${esc(p.link)}</div></a>` : ''}
         <div class="metric-grid">
           <div class="c-pink">${ic('heart')}<b>${compact(p.like_count)}</b><span>Thích</span></div>
           <div class="c-sky">${ic('reply')}<b>${compact(p.reply_count)}</b><span>Trả lời</span></div>
@@ -1037,7 +1077,7 @@
         </dl>
       </div>
       <div class="drawer-foot">
-        <a class="btn primary" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">${ic('external')}Mở Threads</a>
+        <a class="btn primary" href="${esc(safeUrl(p.url))}" target="_blank" rel="noopener noreferrer">${ic('external')}Mở Threads</a>
         <button class="btn" data-act="scrape-replies" data-url="${esc(p.url)}">${ic('reply')}Cào trả lời</button>
         <button class="btn" data-act="copy-text" data-id="${esc(p.id)}">${ic('copy')}Chép chữ</button>
         <button class="btn" data-act="copy-json" data-id="${esc(p.id)}">${ic('copy')}JSON</button>
@@ -1108,7 +1148,7 @@
         <button class="btn sm soft" data-act="open-profile" data-v="${esc(u.username)}">${ic('chart', 'sm')}Chi tiết</button>
         <button class="btn sm" data-act="filter-author" data-v="${esc(u.username)}">${ic('chat', 'sm')}Xem bài</button>
         <button class="btn sm" data-act="rescrape" data-v="${esc(u.username)}">${ic('refresh', 'sm')}Cào lại</button>
-        <a class="btn sm ghost icon" href="${esc(u.url)}" target="_blank" rel="noopener noreferrer" aria-label="Mở trên Threads">${ic('external', 'sm')}</a>
+        <a class="btn sm ghost icon" href="${esc(safeUrl(u.url))}" target="_blank" rel="noopener noreferrer" aria-label="Mở trên Threads">${ic('external', 'sm')}</a>
         <button class="btn sm ghost icon danger" data-act="delete-profile" data-v="${esc(u.username)}" aria-label="Xóa hồ sơ">${ic('trash', 'sm')}</button>
       </div>
     </article>`;
@@ -1157,7 +1197,7 @@
       </div>
       <div class="drawer-body">
         ${u.bio ? `<p class="detail-text" style="font-size:14.5px">${richText(u.bio)}</p>` : ''}
-        ${(u.links || []).length ? `<div class="chips">${u.links.map((l) => `<a class="chip" href="${esc(l)}" target="_blank" rel="noopener noreferrer">${ic('link', 'sm')}${esc(l.replace(/^https?:\/\/(www\.)?/, '').slice(0, 40))}</a>`).join('')}</div>` : ''}
+        ${(u.links || []).length ? `<div class="chips">${u.links.map((l) => `<a class="chip" href="${esc(safeUrl(l))}" target="_blank" rel="noopener noreferrer">${ic('link', 'sm')}${esc(l.replace(/^https?:\/\/(www\.)?/, '').slice(0, 40))}</a>`).join('')}</div>` : ''}
         <div class="metric-grid">
           <div class="c-grape">${ic('users')}<b>${compact(u.follower_count)}</b><span>Theo dõi</span></div>
           <div class="c-sky">${ic('chat')}<b>${num(sm.posts)}</b><span>Bài đã lưu</span></div>
@@ -1183,7 +1223,7 @@
         ${sched
           ? `<a class="btn soft" href="#/jobs?tab=schedules">${ic('calendar')}Đang theo dõi · ${everyLabel(sched.every).toLowerCase()}</a>`
           : `<button class="btn soft" data-act="follow-daily" data-v="${esc(u.username)}">${ic('calendar')}Theo dõi hằng ngày</button>`}
-        <a class="btn ghost" href="${esc(u.url || 'https://www.threads.com/@' + u.username)}" target="_blank" rel="noopener noreferrer">${ic('external')}Threads</a>
+        <a class="btn ghost" href="${esc(safeUrl(u.url || 'https://www.threads.com/@' + u.username))}" target="_blank" rel="noopener noreferrer">${ic('external')}Threads</a>
       </div>`);
   }
 
@@ -1251,7 +1291,9 @@
           <div class="block-head">${tile('box', 'mint')}<div><h3>Dữ liệu</h3><p>Lưu tại data/db.json</p></div></div>
           <div class="row">
             <button class="btn soft" data-act="demo">${ic('party')}Nạp dữ liệu mẫu</button>
-            <button class="btn" data-act="export" data-kind="posts" data-fmt="json">${ic('download')}Sao lưu JSON</button>
+            <button class="btn" data-act="backup">${ic('download')}Sao lưu toàn bộ</button>
+            <button class="btn" data-act="restore">${ic('refresh')}Khôi phục</button>
+            <input type="file" id="restore-file" accept=".json,application/json" hidden />
             <button class="btn danger" data-act="clear-all">${ic('trash')}Xóa toàn bộ</button>
           </div>
           <div class="set-row" style="margin-top:12px;border-top:1px dashed var(--line)" id="auth-row"></div>
@@ -1534,6 +1576,33 @@
       if (posts.length > 200) return toast('Tối đa 200 bài mỗi lần', 'err');
       const job = await startJob('batch', { items: posts.map((p) => p.url).join('\n'), limit: 50 });
       if (job) { S.lib.selected.clear(); drawPosts(); }
+    },
+    backup: () => {
+      download('/api/backup');
+      toast('Đang tải bản sao lưu (không kèm cookie đăng nhập)', 'info');
+    },
+    restore: () => {
+      const input = $('#restore-file');
+      input.value = '';
+      input.onchange = async () => {
+        const file = input.files[0];
+        if (!file) return;
+        let data;
+        try {
+          data = JSON.parse(await file.text());
+        } catch {
+          return toast('File JSON bị hỏng', 'err');
+        }
+        if (!(await confirmBox({ title: 'Khôi phục từ bản sao lưu?', text: `Dữ liệu trong “${esc(file.name)}” sẽ được gộp vào kho hiện tại, không xóa gì. Lịch tự động nhập vào sẽ ở trạng thái tắt.`, ok: 'Khôi phục', icon: 'refresh', color: 'sky' }))) return;
+        try {
+          const r = await api('/restore', { method: 'POST', body: data });
+          toast(`Đã khôi phục ${num(r.posts)} bài, ${num(r.profiles)} hồ sơ, ${num(r.schedules)} lịch${r.skipped ? ` (bỏ qua ${r.skipped} mục lỗi)` : ''}`, 'party');
+          loadSchedules();
+        } catch (e) {
+          toast(e.message, 'err');
+        }
+      };
+      input.click();
     },
     'app-logout': async () => {
       await api('/auth/logout', { method: 'POST' });

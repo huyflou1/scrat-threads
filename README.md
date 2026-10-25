@@ -6,11 +6,11 @@
 
 | Menu | Chức năng |
 | --- | --- |
-| **Tổng quan** | Ô *cào nhanh* tự nhận diện @tên / link / từ khóa, thống kê, biểu đồ 14 ngày, tác giả và hashtag nổi bật, bài hot nhất |
+| **Tổng quan** | Ô *cào nhanh* tự nhận diện @tên / link / từ khóa, thống kê, biểu đồ 14 ngày, **bản đồ giờ đăng hiệu quả** (ngày × khung 3 giờ, chỉ ra khung giờ vàng), tác giả và hashtag nổi bật, bài hot nhất |
 | **Cào dữ liệu** | 4 chế độ: **Hồ sơ**, **Bài viết** (kèm trả lời), **Từ khóa**, **Hàng loạt** (trộn tài khoản và link) |
 | **Tác vụ** | Tab **Hàng đợi**: chạy song song có giới hạn, tiến độ và nhật ký cập nhật trực tiếp (SSE), dừng / chạy lại. Tab **Lịch tự động**: cào lại định kỳ (mỗi giờ, 6 giờ, hằng ngày, hằng tuần), bật/tắt, đổi chu kỳ, chạy ngay |
 | **Kho dữ liệu** | Bài viết và hồ sơ; ngăn chi tiết hồ sơ có biểu đồ người theo dõi theo thời gian, lượt thích trung bình, tỉ lệ tương tác, bài nổi bật và nút *Theo dõi hằng ngày*; tìm kiếm không dấu, lọc theo tác giả / media / lượt thích / ngày, dạng thẻ hoặc bảng, chọn nhiều để xuất, xóa hoặc **cào trả lời hàng loạt** cho các bài đã chọn, menu **Xuất file**: **Excel (.xlsx)** có dòng tiêu đề cố định và bộ lọc, **CSV** (UTF-8 BOM), **JSON** |
-| **Cài đặt** | **Đăng nhập bằng cửa sổ trình duyệt** (tự lấy cookie) hoặc dán cookie thủ công, chạy ẩn trình duyệt, độ trễ, số lần cuộn, proxy, User-Agent, giao diện, dữ liệu mẫu |
+| **Cài đặt** | **Đăng nhập bằng cửa sổ trình duyệt** (tự lấy cookie) hoặc dán cookie thủ công, chạy ẩn trình duyệt, độ trễ, số lần cuộn, proxy, User-Agent, giao diện, dữ liệu mẫu, **sao lưu / khôi phục toàn bộ** (gộp, không xóa dữ liệu hiện có; không kèm cookie) |
 
 **Thông báo** (biểu tượng chuông): khi lịch tự động tìm thấy bài mới hoặc bị lỗi, Scrat báo trong app và — nếu bạn cho phép — báo ra máy tính khi đang ở tab khác.
 
@@ -18,7 +18,11 @@ Phím tắt: `Ctrl/⌘ K` mở bảng lệnh (dán link vào là cào luôn) · 
 
 ## Cài đặt & chạy
 
-Cần **Node.js 18 trở lên**.
+Cần **Node.js 18 trở lên** ([tải bản LTS](https://nodejs.org)).
+
+**Cách nhanh nhất:** nhấp đúp vào `start.bat` (Windows) hoặc `start.command` (macOS). Lần đầu file sẽ tự cài thư viện và Chromium, sau đó tự mở trình duyệt. Trên Linux thì chạy `./start.sh`.
+
+Hoặc chạy bằng lệnh:
 
 ```bash
 npm install

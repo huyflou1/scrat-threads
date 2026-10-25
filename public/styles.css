@@ -654,3 +654,23 @@ details.adv[open] summary .ic { transform: rotate(90deg); }
   .notif-pop { position: fixed; left: 12px; right: 12px; top: 64px; width: auto; }
   .menu { right: auto; left: 0; transform-origin: top left; }
 }
+
+/* ---------- Bản đồ giờ đăng ---------- */
+.heat-wrap { display: grid; grid-template-columns: 1fr 260px; gap: 20px; align-items: start; }
+.heat { display: grid; grid-template-columns: 30px repeat(8, 1fr); gap: 5px; }
+.heat i {
+  aspect-ratio: 2.2; border-radius: 8px; min-height: 22px;
+  background: color-mix(in srgb, var(--grape) calc(var(--l) * 100%), var(--bg-2));
+  transition: transform .15s;
+}
+.heat i:hover { transform: scale(1.08); outline: 2px solid var(--grape); outline-offset: 1px; }
+.heat i.none { background: var(--bg-2); opacity: .6; }
+.heat i.best { box-shadow: 0 0 0 2.5px var(--surface), 0 0 0 4.5px var(--mint); }
+.heat-x, .heat-y { font-size: 11px; font-weight: 800; color: var(--muted); display: grid; place-items: center; }
+.heat-y { justify-items: start; }
+.heat-side { display: flex; flex-direction: column; gap: 10px; }
+.heat-side .callout { font-size: 13px; }
+.heat-legend { display: flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 800; color: var(--muted); }
+.heat-legend i { width: 18px; height: 12px; border-radius: 4px; background: color-mix(in srgb, var(--grape) calc(var(--l) * 100%), var(--bg-2)); }
+@media (max-width: 900px) { .heat-wrap { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .heat { gap: 3px; grid-template-columns: 24px repeat(8, 1fr); } .heat i { aspect-ratio: 1.2; min-height: 18px; border-radius: 6px; } }

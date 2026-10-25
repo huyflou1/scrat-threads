@@ -23,7 +23,9 @@ const scheduler = new Scheduler(store, jobs);
 
 const app = express();
 const auth = createAuth(process.env.APP_PASSWORD || '');
-app.use(express.json({ limit: '2mb' }));
+// Bản khôi phục có thể lớn; các API khác giới hạn 2MB
+const jsonSmall = express.json({ limit: '2mb' });
+app.use((req, res, next) => (req.path === '/api/restore' ? next() : jsonSmall(req, res, next)));
 app.use(auth.middleware);
 auth.routes(app);
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
@@ -38,7 +40,7 @@ const wrap = (fn) => (req, res) => {
 };
 
 /* ---------- Tổng quan ---------- */
-app.get('/api/stats', wrap(() => {
+app.get('/api/stats', wrap((req) => {
   const posts = store.listPosts();
   const profiles = store.listProfiles();
   const allJobs = store.data.jobs;
@@ -50,6 +52,9 @@ app.get('/api/stats', wrap(() => {
     const d = new Date(today - i * 864e5);
     days.push({ date: d.toISOString().slice(0, 10), count: 0, _t: d.getTime() });
   }
+  // Bản đồ giờ đăng: 7 ngày × 8 khung 3 giờ, theo múi giờ của người xem
+  const tz = Number(req.query.tz) || 0; // phút, giống Date#getTimezoneOffset()
+  const heat = Array.from({ length: 7 }, () => Array.from({ length: 8 }, () => ({ n: 0, e: 0 })));
   const tags = new Map();
   const authors = new Map();
   let likes = 0;
@@ -62,6 +67,12 @@ app.get('/api/stats', wrap(() => {
       t.setHours(0, 0, 0, 0);
       const slot = days.find((d) => d._t === t.getTime());
       if (slot) slot.count++;
+    }
+    if (p.published_at && !p.parent_code) {
+      const local = new Date(Date.parse(p.published_at) - tz * 60000);
+      const cell = heat[(local.getUTCDay() + 6) % 7][Math.floor(local.getUTCHours() / 3)];
+      cell.n++;
+      cell.e += engagement(p);
     }
     for (const h of p.hashtags || []) tags.set(h, (tags.get(h) || 0) + 1);
     const a = authors.get(p.username) || { username: p.username, full_name: p.full_name, avatar: p.avatar, verified: p.verified, posts: 0, engagement: 0 };
@@ -83,6 +94,7 @@ app.get('/api/stats', wrap(() => {
       failed: allJobs.filter((j) => j.status === 'failed').length,
     },
     daily: days.map(({ _t, ...d }) => d),
+    heat: heat.map((row) => row.map((c) => ({ n: c.n, avg: c.n ? Math.round(c.e / c.n) : 0 }))),
     topAuthors: [...authors.values()].sort((a, b) => b.engagement - a.engagement).slice(0, 5),
     topTags: [...tags.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([tag, count]) => ({ tag, count })),
     topPosts: [...posts].sort((a, b) => engagement(b) - engagement(a)).slice(0, 3),
@@ -196,7 +208,8 @@ app.get('/api/img', async (req, res) => {
   }
   if (url.protocol !== 'https:' || !IMG_HOSTS.test(url.hostname)) return res.status(403).end();
   try {
-    const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(15000) });
+    // redirect: 'error' — không để chuyển hướng dẫn ra ngoài danh sách tên miền cho phép
+    const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, redirect: 'error', signal: AbortSignal.timeout(15000) });
     const type = r.headers.get('content-type') || '';
     if (!r.ok || !/^(image|video)\//.test(type)) return res.status(r.ok ? 415 : r.status).end();
     res.setHeader('Content-Type', type);
@@ -266,6 +279,18 @@ app.put('/api/settings', wrap((req) => {
   return s;
 }));
 
+app.get('/api/backup', (req, res) => {
+  const stamp = new Date().toISOString().slice(0, 10);
+  res.setHeader('Content-Disposition', `attachment; filename="scrat-threads-backup-${stamp}.json"`);
+  res.type('application/json; charset=utf-8').send(JSON.stringify(store.exportAll()));
+});
+
+app.post('/api/restore', express.json({ limit: '200mb' }), wrap((req) => {
+  const r = store.importAll(req.body);
+  jobs.emit('data');
+  return r;
+}));
+
 app.post('/api/demo', wrap(() => {
   const r = seedDemo(store);
   jobs.emit('data');
@@ -311,14 +336,31 @@ jobs.on('data', () => {
 setInterval(() => broadcast('ping', {}), 25000).unref();
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'Không tìm thấy API' }));
+// Lỗi đọc body (JSON hỏng, quá lớn…) trả về JSON thay vì trang HTML mặc định
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  const msg = err.type === 'entity.too.large' ? 'File quá lớn' : err.type === 'entity.parse.failed' ? 'File JSON bị hỏng' : 'Lỗi máy chủ';
+  res.status(err.status || 500).json({ error: msg });
+});
 
 const server = app.listen(PORT, HOST, () => {
   console.log(`\n  🌰 Scrat Threads đang chạy tại http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
   console.log(auth.enabled ? '  🔒 Đã bật mật khẩu (APP_PASSWORD)\n' : '');
+  if (process.env.OPEN_BROWSER) openBrowser(`http://${['0.0.0.0', '::'].includes(HOST) ? 'localhost' : HOST}:${PORT}`);
   if (!auth.enabled && !['127.0.0.1', 'localhost', '::1'].includes(HOST)) {
     console.warn('  ⚠️  App đang mở ra mạng mà KHÔNG có mật khẩu. Đặt APP_PASSWORD để bảo vệ dữ liệu và cookie đăng nhập.\n');
   }
 });
+
+/** Mở trình duyệt mặc định (dùng cho file khởi chạy bằng nhấp đúp). */
+function openBrowser(url) {
+  const { spawn } = require('child_process');
+  const [cmd, args] = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]]
+    : process.platform === 'darwin' ? ['open', [url]] : ['xdg-open', [url]];
+  try {
+    spawn(cmd, args, { stdio: 'ignore', detached: true }).on('error', () => {}).unref();
+  } catch { /* không có trình duyệt — người dùng tự mở */ }
+}
 
 async function shutdown() {
   store.flush();

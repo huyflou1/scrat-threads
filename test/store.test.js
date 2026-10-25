@@ -39,3 +39,28 @@ test('chỉ gắn parent_code cho trả lời đăng sau bài chính', () => {
   assert.equal(pc('3'), 'MAIN', 'trả lời thật');
   clearTimeout(s.timer);
 });
+
+test('sao lưu bỏ cookie; khôi phục gộp, bỏ bản ghi lỗi, tắt lịch', () => {
+  const a = new Store(tmp());
+  a.updateSettings({ cookies: 'sessionid=bi-mat' });
+  a.upsertPosts([{ id: '1', code: 'A', username: 'zuck', text: 'xin chào', like_count: 5 }]);
+  a.upsertProfiles([{ username: 'zuck', follower_count: 100 }]);
+  a.data.schedules.push({ id: 's1', type: 'profile', raw: { username: 'zuck' }, every: 1440, enabled: true });
+  const backup = JSON.parse(JSON.stringify(a.exportAll()));
+  assert.equal('cookies' in backup.settings, false);
+  assert.equal(JSON.stringify(backup).includes('bi-mat'), false);
+
+  const b = new Store(tmp());
+  b.upsertProfiles([{ username: 'zuck', follower_count: 90 }]);
+  backup.posts.push({ id: '2', code: 'B', username: 'có dấu cách' }, { id: 3 }, null);
+  backup.posts[0].like_count = 'không phải số';
+  const r = b.importAll(backup);
+  assert.deepEqual(r, { posts: 1, profiles: 1, schedules: 1, skipped: 3 });
+  assert.equal(b.data.posts['1'].text, 'xin chào');
+  assert.equal(b.data.posts['1'].like_count, 0, 'ép kiểu số');
+  assert.equal(b.data.profiles.zuck.history.length, 2, 'gộp lịch sử theo dõi');
+  assert.equal(b.data.schedules[0].enabled, false, 'lịch nhập vào bị tắt');
+  assert.equal(b.importAll(backup).schedules, 0, 'không nhập trùng lịch');
+  assert.throws(() => b.importAll({ foo: 1 }), /không phải bản sao lưu/);
+  clearTimeout(a.timer); clearTimeout(b.timer);
+});
