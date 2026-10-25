@@ -18,6 +18,13 @@ if [ ! -f node_modules/.scrat-ready ]; then
     echo "❌ Cài đặt thất bại — kiểm tra kết nối mạng rồi chạy lại."
     read -r -p "Nhấn Enter để đóng…" _; exit 1
   }
+elif ! node scripts/check-deps.js; then
+  # Bản mới có thể thêm thư viện — cài phần còn thiếu
+  echo "🌰 Đang cài thêm thư viện cho bản mới…"
+  npm install || {
+    echo "❌ Cài đặt thất bại — kiểm tra kết nối mạng rồi chạy lại."
+    read -r -p "Nhấn Enter để đóng…" _; exit 1
+  }
 fi
 
 OPEN_BROWSER=1 node server.js

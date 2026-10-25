@@ -5,7 +5,18 @@
  * chọn theo độ dài / độ phức tạp của nội dung nhập vào.
  */
 
-const Anthropic = require('@anthropic-ai/sdk');
+// Nạp SDK khi cần: thiếu thư viện thì chỉ tính năng AI báo lỗi, app vẫn chạy
+let sdk = null;
+function loadSdk() {
+  if (!sdk) {
+    try {
+      sdk = require('@anthropic-ai/sdk');
+    } catch {
+      throw new Error('Thiếu thư viện @anthropic-ai/sdk — mở thư mục app, chạy "npm install" rồi khởi động lại');
+    }
+  }
+  return sdk;
+}
 
 const MODELS = [
   { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', tag: 'Chất lượng cao nhất', effort: 'medium', fallback: true },
@@ -106,6 +117,7 @@ function parseVariants(text) {
 
 /** Đổi lỗi SDK thành thông báo tiếng Việt dễ hiểu. */
 function explainError(e) {
+  const Anthropic = loadSdk();
   if (e instanceof Anthropic.AuthenticationError) return 'API key của Anthropic không hợp lệ — kiểm tra lại trong Cài đặt';
   if (e instanceof Anthropic.PermissionDeniedError) return 'API key không có quyền dùng mô hình này';
   if (e instanceof Anthropic.NotFoundError) return 'Không tìm thấy mô hình — có thể tài khoản chưa được dùng mô hình này';
@@ -133,6 +145,7 @@ async function generate(opts) {
   if (!model) throw new Error('Mô hình không hợp lệ');
 
   // apiKey rỗng: SDK tự tìm ANTHROPIC_API_KEY / hồ sơ đăng nhập trong môi trường
+  const Anthropic = loadSdk();
   const client = new Anthropic(opts.apiKey ? { apiKey: opts.apiKey } : {});
   const { system, user } = buildPrompt({ ...opts, input, examples });
   const params = {

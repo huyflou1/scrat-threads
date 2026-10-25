@@ -21,6 +21,13 @@ if not exist "node_modules\.scrat-ready" (
   call npm install || goto :fail
   call npx playwright install chromium || goto :fail
   type nul > "node_modules\.scrat-ready"
+) else (
+  rem Bản mới có thể thêm thư viện — cài phần còn thiếu
+  node scripts\check-deps.js
+  if errorlevel 1 (
+    echo Đang cài thêm thư viện cho bản mới...
+    call npm install || goto :fail
+  )
 )
 
 set OPEN_BROWSER=1
