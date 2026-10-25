@@ -1,4 +1,4 @@
-/* Scrat Threads — ứng dụng một trang, không cần build. */
+/* Scrat Thread by HuyFlou — ứng dụng một trang, không cần build. */
 (() => {
   'use strict';
 
@@ -310,7 +310,7 @@
     const { page } = S.route;
     $('#page-title').innerHTML = `${page.label}`;
     $('#page-sub').textContent = page.sub;
-    document.title = `${page.label} · Scrat Threads`;
+    document.title = `${page.label} · Scrat Thread by HuyFlou`;
     renderNav();
     closeDrawer();
     const v = $('#view');

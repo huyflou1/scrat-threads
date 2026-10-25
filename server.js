@@ -344,7 +344,7 @@ app.use((err, req, res, next) => {
 });
 
 const server = app.listen(PORT, HOST, () => {
-  console.log(`\n  🌰 Scrat Threads đang chạy tại http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
+  console.log(`\n  🌰 Scrat Thread by HuyFlou đang chạy tại http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
   console.log(auth.enabled ? '  🔒 Đã bật mật khẩu (APP_PASSWORD)\n' : '');
   if (process.env.OPEN_BROWSER) openBrowser(`http://${['0.0.0.0', '::'].includes(HOST) ? 'localhost' : HOST}:${PORT}`);
   if (!auth.enabled && !['127.0.0.1', 'localhost', '::1'].includes(HOST)) {

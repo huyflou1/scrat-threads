@@ -1,4 +1,4 @@
-# 🌰 Scrat Threads
+# 🌰 Scrat Thread by HuyFlou
 
 Ứng dụng cào dữ liệu **Threads** (threads.com) chạy trên máy của bạn. Giao diện dạng block, bộ icon duotone tự vẽ, có chế độ sáng/tối và dùng tốt trên điện thoại.
 

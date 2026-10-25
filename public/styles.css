@@ -1,5 +1,5 @@
 /* ==========================================================
-   Scrat Threads — giao diện block, pastel, bo tròn, thân thiện
+   Scrat Thread by HuyFlou — giao diện block, pastel, bo tròn, thân thiện
    ========================================================== */
 
 :root {
@@ -111,6 +111,7 @@ a { color: inherit; text-decoration: none; }
 .brand .mascot { width: 42px; height: 42px; animation: bob 4s ease-in-out infinite; }
 .brand b { display: block; font-size: 18px; font-weight: 900; letter-spacing: -.02em; }
 .brand small { color: var(--muted); font-size: 12px; font-weight: 700; }
+.brand .by { color: var(--grape); font-weight: 900; }
 @keyframes bob { 0%, 100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(-3px) rotate(4deg); } }
 
 .nav-group { margin-top: 10px; }

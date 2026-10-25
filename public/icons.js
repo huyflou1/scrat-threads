@@ -1,4 +1,4 @@
-/* Bộ icon duotone bo tròn, vẽ tay cho Scrat Threads.
+/* Bộ icon duotone bo tròn, vẽ tay cho Scrat Thread by HuyFlou.
  * Đường nét = stroke currentColor; phần "class=d" là lớp tô nhạt (duotone). */
 (() => {
   const I = {

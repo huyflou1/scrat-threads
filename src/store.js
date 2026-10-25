@@ -230,7 +230,7 @@ class Store {
    */
   importAll(raw) {
     if (!raw || raw.app !== 'scrat-threads' || !Array.isArray(raw.posts)) {
-      throw new Error('File không phải bản sao lưu của Scrat Threads');
+      throw new Error('File không phải bản sao lưu của Scrat Thread by HuyFlou');
     }
     const str = (v) => typeof v === 'string';
     const USER = /^[A-Za-z0-9._]{1,30}$/;

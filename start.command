@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Khởi chạy Scrat Threads: tự cài thư viện lần đầu rồi mở trình duyệt.
+# Khởi chạy Scrat Thread by HuyFlou: tự cài thư viện lần đầu rồi mở trình duyệt.
 cd "$(dirname "$0")" || exit 1
 
 if ! command -v node >/dev/null 2>&1; then

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Đăng nhập · Scrat Threads</title>
+  <title>Đăng nhập · Scrat Thread by HuyFlou</title>
   <meta name="theme-color" content="#7c5cff" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌰</text></svg>" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -19,7 +19,9 @@
     .login { width: min(400px, 100%); text-align: center; padding: 32px 28px; }
     .login .mascot { width: 96px; height: 96px; margin: 0 auto 8px; display: block; animation: bob 4s ease-in-out infinite; }
     .login h1 { margin: 0; font-size: 24px; font-weight: 900; letter-spacing: -.02em; }
-    .login p { margin: 4px 0 22px; color: var(--muted); font-weight: 650; }
+    .login .byline { font-size: 13px; font-weight: 750; color: var(--muted); margin-top: 2px; }
+    .login .byline b { color: var(--grape); font-weight: 900; }
+    .login p { margin: 10px 0 22px; color: var(--muted); font-weight: 650; }
     .login form { display: flex; flex-direction: column; gap: 12px; text-align: left; }
     .login .err { min-height: 20px; color: var(--danger); font-size: 13px; font-weight: 800; }
     .login.shake { animation: shake .4s; }
@@ -30,7 +32,8 @@
 <body>
   <main class="block login" id="card">
     <svg class="mascot" aria-hidden="true"><use href="#i-acorn" /></svg>
-    <h1>Scrat Threads</h1>
+    <h1>Scrat Thread</h1>
+    <div class="byline">by <b>HuyFlou</b></div>
     <p>Nhập mật khẩu để vào kho hạt dẻ nhé 🌰</p>
     <form id="form">
       <label class="label" for="pw">Mật khẩu</label>

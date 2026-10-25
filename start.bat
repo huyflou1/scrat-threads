@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-rem Khởi chạy Scrat Threads: tự cài thư viện lần đầu rồi mở trình duyệt.
+rem Khởi chạy Scrat Thread by HuyFlou: tự cài thư viện lần đầu rồi mở trình duyệt.
 cd /d "%~dp0"
 
 where node >nul 2>nul
