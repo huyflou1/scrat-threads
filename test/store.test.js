@@ -52,6 +52,9 @@ test('sao lưu bỏ cookie; khôi phục gộp, bỏ bản ghi lỗi, tắt lị
 
   const b = new Store(tmp());
   b.upsertProfiles([{ username: 'zuck', follower_count: 90 }]);
+  // Mốc thời gian cố định: hai lần đo cùng một mili-giây sẽ bị gộp làm một
+  b.data.profiles.zuck.history = [{ t: '2026-01-01T00:00:00.000Z', f: 90 }];
+  backup.profiles[0].history = [{ t: '2026-02-01T00:00:00.000Z', f: 100 }];
   backup.posts.push({ id: '2', code: 'B', username: 'có dấu cách' }, { id: 3 }, null);
   backup.posts[0].like_count = 'không phải số';
   const r = b.importAll(backup);
