@@ -39,6 +39,9 @@
     cancelled: { label: 'Đã hủy', color: 'lemon' },
   };
 
+  const REPEATS = [[0, 'Một lần'], [60, 'Mỗi giờ'], [360, 'Mỗi 6 giờ'], [1440, 'Hằng ngày'], [10080, 'Hằng tuần']];
+  const everyLabel = (m) => (REPEATS.find(([v]) => v === m) || [0, `Mỗi ${m} phút`])[1];
+
   const AV_COLORS = ['#7c5cff', '#ff7a45', '#12a87a', '#2f8cff', '#e0a100', '#f0487f', '#8b5cf6', '#0ea5a4'];
   const PAGE_SIZE = 48;
 
@@ -55,6 +58,11 @@
     jobs: [],
     jobsLoaded: false,
     jobFilter: 'all',
+    jobTab: 'queue',
+    schedules: [],
+    repeat: store.get('repeat', 0),
+    postCache: new Map(),
+    loginBusy: false,
     openLogs: new Set(),
     settings: null,
     settingsDirty: false,
@@ -310,6 +318,7 @@
     if (!S.stats) v.innerHTML = `<div class="bento">${'<div class="skel span-3"></div>'.repeat(4)}<div class="skel span-8" style="min-height:260px"></div><div class="skel span-4"></div></div>`;
     try {
       S.stats = await api('/stats');
+      cachePosts(S.stats.topPosts);
     } catch (e) {
       v.innerHTML = empty('Không kết nối được máy chủ', esc(e.message));
       return;
@@ -468,8 +477,13 @@
             <input type="range" id="f-limit" min="5" max="${limitMax}" step="5" value="${d.limit}" />
             <div class="presets">${[20, 50, 100, 200, 500].filter((n) => n <= limitMax).map((n) => `<button type="button" class="chip ${+d.limit === n ? 'on' : ''}" data-act="limit" data-v="${n}">${n}</button>`).join('')}</div>
           </div>
+          <div class="field">
+            <span class="label">Lặp lại</span>
+            <div class="seg" role="radiogroup">${REPEATS.map(([v, l]) => `<button type="button" class="${S.repeat === v ? 'on' : ''}" data-act="repeat" data-v="${v}">${v ? ic('refresh', 'sm') : ''}${l}</button>`).join('')}</div>
+            <span class="hint" id="repeat-hint">${repeatHint()}</span>
+          </div>
           <div class="row" style="margin-top:4px">
-            <button class="btn primary lg" type="submit">${ic('play')}Bắt đầu cào</button>
+            <button class="btn primary lg" type="submit" id="submit-btn">${submitLabel()}</button>
             <span class="muted" style="font-size:13px;font-weight:700">Nhấn <kbd>Ctrl</kbd> <kbd>Enter</kbd> để chạy nhanh</span>
           </div>
         </form>
@@ -521,7 +535,7 @@
     $('#scrape-form').onsubmit = async (e) => {
       e.preventDefault();
       const body = { ...S.draft[m] };
-      const ok = await startJob(m, body, { stay: true });
+      const ok = S.repeat ? await createSchedule(m, body, S.repeat) : await startJob(m, body, { stay: true });
       if (ok) {
         S.draft[m][main.dataset.draft] = '';
         store.set('draft', S.draft);
@@ -530,6 +544,26 @@
       }
     };
     if (!matchMedia('(max-width: 640px)').matches) main.focus();
+  }
+
+  function repeatHint() {
+    return S.repeat
+      ? `Chạy ngay bây giờ, sau đó tự chạy lại ${everyLabel(S.repeat).toLowerCase()} khi app đang mở. Quản lý ở Tác vụ → Lịch tự động.`
+      : 'Chạy một lần duy nhất.';
+  }
+  const submitLabel = () => (S.repeat ? `${ic('refresh')}Tạo lịch & chạy ngay` : `${ic('play')}Bắt đầu cào`);
+
+  async function createSchedule(type, body, every) {
+    try {
+      const r = await api('/schedules', { method: 'POST', body: { type, ...body, every } });
+      upsertJob(r.job);
+      upsertSchedule(r.schedule);
+      toast(`Đã tạo lịch ${everyLabel(every).toLowerCase()}: ${r.schedule.label}`, 'party', { label: 'Xem lịch', run: () => go('/jobs?tab=schedules') });
+      return r;
+    } catch (e) {
+      toast(e.message, 'err');
+      return null;
+    }
   }
 
   function setLimit(v, redraw = true) {
@@ -592,8 +626,75 @@
      Trang: Tác vụ
      ===================================================== */
   async function renderJobs() {
+    S.jobTab = S.route.query.tab === 'schedules' ? 'schedules' : 'queue';
+    if (S.jobTab === 'schedules') {
+      await loadSchedules();
+      if (S.route.id === 'jobs') drawSchedules();
+      return;
+    }
     if (!S.jobsLoaded) await loadJobs();
     drawJobs();
+  }
+
+  function jobTabs() {
+    const on = S.schedules.filter((x) => x.enabled).length;
+    return `<div class="toolbar"><div class="seg">
+      <button class="${S.jobTab === 'queue' ? 'on' : ''}" data-go="/jobs">${ic('timer', 'sm')}Hàng đợi</button>
+      <button class="${S.jobTab === 'schedules' ? 'on' : ''}" data-go="/jobs?tab=schedules">${ic('calendar', 'sm')}Lịch tự động${on ? `<span class="n">${on}</span>` : ''}</button>
+    </div></div>`;
+  }
+
+  async function loadSchedules() {
+    try { S.schedules = await api('/schedules'); } catch (e) { toast(e.message, 'err'); }
+  }
+
+  function drawSchedules() {
+    $('#view').innerHTML = `${jobTabs()}
+      <div class="toolbar">
+        <span class="muted" style="font-weight:700;font-size:13px">${ic('info', 'sm')} Lịch chỉ chạy khi ứng dụng đang mở. Lượt trước chưa xong thì lượt mới được bỏ qua.</span>
+        <div style="flex:1"></div>
+        <a class="btn soft" href="#/scrape">${ic('plus')}Lịch mới</a>
+      </div>
+      <div class="jobs" id="sched-list">${S.schedules.length ? S.schedules.map(scheduleCard).join('')
+        : `<div class="block">${empty('Chưa có lịch nào', 'Ở trang Cào dữ liệu, chọn “Lặp lại” (vd: Hằng ngày) để Scrat tự cào định kỳ — rất hợp để theo dõi người theo dõi tăng giảm.', `<a class="btn primary" href="#/scrape">${ic('calendar')}Tạo lịch</a>`)}</div>`}</div>`;
+  }
+
+  function scheduleCard(x) {
+    const m = MODES[x.type];
+    const st = x.last_status && STATUS[x.last_status];
+    return `<article class="block job ${x.enabled ? '' : 'paused'}" id="sch-${x.id}">
+      <div class="job-top">
+        ${tile(m.icon, m.color)}
+        <div class="job-title"><b>${esc(x.label)}</b><span>${m.label} · ${everyLabel(x.every)} · đã chạy ${num(x.runs)} lần</span></div>
+        <label class="switch" title="${x.enabled ? 'Đang bật' : 'Đang tắt'}"><input type="checkbox" data-change="toggle-schedule" data-id="${x.id}" ${x.enabled ? 'checked' : ''} aria-label="Bật/tắt lịch"/><span></span></label>
+      </div>
+      <div class="job-meta">
+        <span>${ic('calendar')}${x.enabled ? `Lượt tới: ${ago(x.next_run)}` : 'Đang tạm dừng'}</span>
+        <span>${ic('timer')}Lần cuối: ${ago(x.last_run)}</span>
+        ${st ? `<span class="status c-${st.color} ${x.last_status}">${st.label}${x.last_posts != null ? ` · ${num(x.last_posts)} bài` : ''}</span>` : ''}
+        <span style="flex:1"></span>
+        <span class="job-acts">
+          <select class="select" style="width:auto;padding:5px 32px 5px 10px;font-size:13px" data-change="sched-every" data-id="${x.id}" aria-label="Chu kỳ">
+            ${REPEATS.filter(([v]) => v).map(([v, l]) => `<option value="${v}" ${x.every === v ? 'selected' : ''}>${l}</option>`).join('')}
+            ${REPEATS.some(([v]) => v === x.every) ? '' : `<option selected value="${x.every}">${everyLabel(x.every)}</option>`}
+          </select>
+          <button class="btn sm soft" data-act="run-schedule" data-id="${x.id}">${ic('play', 'sm')}Chạy ngay</button>
+          <button class="btn sm ghost icon danger" data-act="delete-schedule" data-id="${x.id}" aria-label="Xóa lịch">${ic('trash', 'sm')}</button>
+        </span>
+      </div>
+      ${x.error ? `<div class="callout c-pink" style="margin-top:12px">${ic('warn')}<div>Lịch đã tự tắt: ${esc(x.error)}</div></div>` : ''}
+    </article>`;
+  }
+
+  function upsertSchedule(x) {
+    const i = S.schedules.findIndex((y) => y.id === x.id);
+    if (i >= 0) S.schedules[i] = { ...S.schedules[i], ...x };
+    else S.schedules.unshift(x);
+    if (S.route.id === 'jobs' && S.jobTab === 'schedules') {
+      const el = $('#sch-' + x.id);
+      if (el) el.outerHTML = scheduleCard(S.schedules.find((y) => y.id === x.id));
+      else drawSchedules();
+    }
   }
 
   function drawJobs() {
@@ -609,7 +710,7 @@
       if (S.jobFilter === 'failed') return j.status === 'failed' || j.status === 'cancelled';
       return j.status === S.jobFilter;
     });
-    $('#view').innerHTML = `
+    $('#view').innerHTML = `${jobTabs()}
       <div class="toolbar">
         <div class="seg">${filters.map(([k, l]) => `<button class="${S.jobFilter === k ? 'on' : ''}" data-act="job-filter" data-v="${k}">${l}<span class="n">${counts[k] || 0}</span></button>`).join('')}</div>
         <div class="spacer" style="flex:1"></div>
@@ -667,7 +768,7 @@
     renderNav();
     // Vá DOM tại chỗ để không mất vị trí cuộn
     const id = S.route.id;
-    if (id === 'jobs') {
+    if (id === 'jobs' && S.jobTab === 'queue') {
       const el = $('#job-' + j.id);
       if (el && $('#job-list')) {
         const logs = el.querySelector('.logs');
@@ -787,6 +888,7 @@
       const r = await api('/posts?' + qs({ ...L.f, offset: L.items.length, limit: PAGE_SIZE }));
       if (token !== L.token) return;
       L.total = r.total;
+      cachePosts(r.items);
       L.items = reset ? r.items : L.items.concat(r.items);
       drawPosts();
     } catch (e) {
@@ -884,9 +986,11 @@
     updateBulk();
   }
 
-  function findPost(id) {
-    return S.lib.items.find((p) => p.id === id) || (S.stats && S.stats.topPosts.find((p) => p.id === id));
+  function cachePosts(list) {
+    for (const p of list) S.postCache.set(p.id, p);
+    return list;
   }
+  const findPost = (id) => S.postCache.get(id);
 
   function openPost(id) {
     const p = findPost(id);
@@ -920,7 +1024,7 @@
         <button class="btn" data-act="scrape-replies" data-url="${esc(p.url)}">${ic('reply')}Cào trả lời</button>
         <button class="btn" data-act="copy-text" data-id="${esc(p.id)}">${ic('copy')}Chép chữ</button>
         <button class="btn" data-act="copy-json" data-id="${esc(p.id)}">${ic('copy')}JSON</button>
-        <button class="btn" data-act="filter-author" data-v="${esc(p.username)}">${ic('user')}Bài của tác giả</button>
+        <button class="btn" data-act="open-profile" data-v="${esc(p.username)}">${ic('user')}Hồ sơ tác giả</button>
         <button class="btn danger" data-act="delete-one" data-id="${esc(p.id)}">${ic('trash')}Xóa</button>
       </div>`);
   }
@@ -975,7 +1079,7 @@
     const h = u.history || [];
     const delta = h.length > 1 ? h[h.length - 1].f - h[h.length - 2].f : 0;
     return `<article class="block profile">
-      <div class="profile-top">${avatar(u, 'lg')}
+      <div class="profile-top" data-act="open-profile" data-v="${esc(u.username)}" style="cursor:pointer" title="Xem chi tiết">${avatar(u, 'lg')}
         <div class="who"><b>${esc(u.full_name || u.username)}${verified(u.verified)}</b><span>@${esc(u.username)}${u.private ? ' · 🔒 Riêng tư' : ''}</span></div>
       </div>
       <p class="bio">${esc(u.bio) || '<span class="muted">Chưa có tiểu sử</span>'}</p>
@@ -985,12 +1089,86 @@
         <div class="c-mint"><b>${ago(u.scraped_at).replace('trước', '').trim()}</b><span>Cập nhật</span></div>
       </div>
       <div class="row">
-        <button class="btn sm soft" data-act="filter-author" data-v="${esc(u.username)}">${ic('chat', 'sm')}Xem bài</button>
+        <button class="btn sm soft" data-act="open-profile" data-v="${esc(u.username)}">${ic('chart', 'sm')}Chi tiết</button>
+        <button class="btn sm" data-act="filter-author" data-v="${esc(u.username)}">${ic('chat', 'sm')}Xem bài</button>
         <button class="btn sm" data-act="rescrape" data-v="${esc(u.username)}">${ic('refresh', 'sm')}Cào lại</button>
         <a class="btn sm ghost icon" href="${esc(u.url)}" target="_blank" rel="noopener noreferrer" aria-label="Mở trên Threads">${ic('external', 'sm')}</a>
         <button class="btn sm ghost icon danger" data-act="delete-profile" data-v="${esc(u.username)}" aria-label="Xóa hồ sơ">${ic('trash', 'sm')}</button>
       </div>
     </article>`;
+  }
+
+  /** Biểu đồ đường nhỏ cho lịch sử người theo dõi. */
+  function sparkline(history) {
+    if (!history || history.length < 2) {
+      return `<div class="muted" style="font-size:13px;font-weight:700">${ic('info', 'sm')} Cần ít nhất 2 lần cào để vẽ biểu đồ. Bật “Theo dõi hằng ngày” để Scrat tự ghi lại.</div>`;
+    }
+    const W = 460, H = 90, P = 6;
+    const vals = history.map((h) => h.f);
+    const min = Math.min(...vals), max = Math.max(...vals);
+    const span = max - min || 1;
+    const pts = history.map((h, i) => [P + (i / (history.length - 1)) * (W - 2 * P), H - P - ((h.f - min) / span) * (H - 2 * P)]);
+    const line = pts.map((p) => p.map((n) => n.toFixed(1)).join(',')).join(' ');
+    const last = pts[pts.length - 1];
+    const diff = vals[vals.length - 1] - vals[0];
+    return `<div class="spark">
+      <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Lịch sử người theo dõi">
+        <polygon points="${P},${H} ${line} ${W - P},${H}" class="spark-area"/>
+        <polyline points="${line}" class="spark-line"/>
+        <circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="4.5" class="spark-dot"/>
+      </svg>
+      <div class="spark-foot"><span>${new Date(history[0].t).toLocaleDateString('vi-VN')}</span>
+        <b class="${diff >= 0 ? 'up' : 'down'}">${diff >= 0 ? '▲' : '▼'} ${num(Math.abs(diff))} (${history.length} lần đo)</b>
+        <span>${new Date(history[history.length - 1].t).toLocaleDateString('vi-VN')}</span></div>
+    </div>`;
+  }
+
+  async function openProfile(username) {
+    let r;
+    try {
+      r = await api('/profiles/' + encodeURIComponent(username));
+    } catch (e) {
+      return toast(e.message, 'err');
+    }
+    const u = r.profile;
+    const sm = r.summary;
+    cachePosts(r.topPosts);
+    const sched = r.schedules[0];
+    openDrawer(`
+      <div class="drawer-head">${avatar(u)}
+        <h3 id="drawer-title">${esc(u.full_name || u.username)}${verified(u.verified)}<br><small class="muted" style="font-size:13px">@${esc(u.username)}${u.private ? ' · 🔒 Riêng tư' : ''}</small></h3>
+        <button class="btn icon ghost" data-act="close-drawer" aria-label="Đóng">${ic('x')}</button>
+      </div>
+      <div class="drawer-body">
+        ${u.bio ? `<p class="detail-text" style="font-size:14.5px">${richText(u.bio)}</p>` : ''}
+        ${(u.links || []).length ? `<div class="chips">${u.links.map((l) => `<a class="chip" href="${esc(l)}" target="_blank" rel="noopener noreferrer">${ic('link', 'sm')}${esc(l.replace(/^https?:\/\/(www\.)?/, '').slice(0, 40))}</a>`).join('')}</div>` : ''}
+        <div class="metric-grid">
+          <div class="c-grape">${ic('users')}<b>${compact(u.follower_count)}</b><span>Theo dõi</span></div>
+          <div class="c-sky">${ic('chat')}<b>${num(sm.posts)}</b><span>Bài đã lưu</span></div>
+          <div class="c-pink">${ic('heart')}<b>${compact(sm.avg_likes)}</b><span>TB thích/bài</span></div>
+          <div class="c-mint">${ic('bolt')}<b>${sm.engagement_rate == null ? '—' : (sm.engagement_rate * 100).toFixed(2) + '%'}</b><span>Tỉ lệ tương tác</span></div>
+        </div>
+        <section>
+          <div class="block-head" style="margin-bottom:8px">${tile('chart', 'grape', 'sm')}<div><h3>Người theo dõi theo thời gian</h3></div></div>
+          ${sparkline(u.history)}
+        </section>
+        <section>
+          <div class="block-head" style="margin-bottom:8px">${tile('party', 'lemon', 'sm')}<div><h3>Bài nổi bật</h3><p>Theo tương tác</p></div></div>
+          <div class="list">${r.topPosts.length ? r.topPosts.map((p) => `
+            <div class="list-item" data-act="open-post" data-id="${esc(p.id)}">
+              <div class="grow"><b style="font-weight:700">${esc(p.text || '(không có chữ)')}</b><span>${ago(p.published_at)} · ${compact(p.reply_count)} trả lời</span></div>
+              <span class="metric c-pink">${ic('heart')}${compact(p.like_count)}</span>
+            </div>`).join('') : empty('Chưa có bài viết', 'Cào lại hồ sơ để lấy bài viết.', '', true)}</div>
+        </section>
+      </div>
+      <div class="drawer-foot">
+        <button class="btn primary" data-act="filter-author" data-v="${esc(u.username)}">${ic('chat')}Tất cả bài</button>
+        <button class="btn" data-act="rescrape" data-v="${esc(u.username)}">${ic('refresh')}Cào lại</button>
+        ${sched
+          ? `<a class="btn soft" href="#/jobs?tab=schedules">${ic('calendar')}Đang theo dõi · ${everyLabel(sched.every).toLowerCase()}</a>`
+          : `<button class="btn soft" data-act="follow-daily" data-v="${esc(u.username)}">${ic('calendar')}Theo dõi hằng ngày</button>`}
+        <a class="btn ghost" href="${esc(u.url || 'https://www.threads.com/@' + u.username)}" target="_blank" rel="noopener noreferrer">${ic('external')}Threads</a>
+      </div>`);
   }
 
   /* =====================================================
@@ -1026,11 +1204,15 @@
         </section>
 
         <section class="block span-6">
-          <div class="block-head">${tile('cookie', 'lemon')}<div><h3>Đăng nhập (cookie)</h3><p>Cần cho tìm kiếm & nội dung giới hạn</p></div></div>
-          <div class="field">
-            <textarea class="textarea" data-s="cookies" placeholder='sessionid=...; csrftoken=...  hoặc JSON xuất từ extension Cookie-Editor' style="min-height:110px">${esc(s.cookies)}</textarea>
-            <span class="hint">Đăng nhập threads.com trên trình duyệt → xuất cookie bằng extension (vd: Cookie-Editor) → dán vào đây. Cookie chỉ lưu trên máy bạn.</span>
-          </div>
+          <div class="block-head">${tile('cookie', 'lemon')}<div><h3>Đăng nhập Threads</h3><p>Cần cho tìm kiếm & lấy nhiều bài hơn</p></div><div class="act" id="login-pill"></div></div>
+          <div class="row" id="login-actions"></div>
+          <details class="adv">
+            <summary>${ic('chevron', 'sm')}Dán cookie thủ công</summary>
+            <div class="field" style="margin-top:10px">
+              <textarea class="textarea" data-s="cookies" placeholder='sessionid=...; csrftoken=...  hoặc JSON xuất từ extension Cookie-Editor' style="min-height:110px">${esc(s.cookies)}</textarea>
+              <span class="hint">Dùng khi máy không mở được cửa sổ trình duyệt (vd: chạy trên server). Xuất cookie threads.com bằng extension như Cookie-Editor rồi dán vào đây. Cookie chỉ lưu trên máy bạn.</span>
+            </div>
+          </details>
         </section>
 
         <section class="block span-6">
@@ -1064,12 +1246,29 @@
         <button class="btn sm" style="background:var(--primary);color:var(--primary-ink)" data-act="save-settings">${ic('check', 'sm')}Lưu cài đặt</button>
       </div>`;
 
+    drawLogin();
+    api('/login').then((st) => { S.login = st; drawLogin(); }).catch(() => {});
+
     $$('#view [data-s]').forEach((el) => {
       el.addEventListener('input', () => {
         S.settingsDirty = true;
         $('#save-bar').classList.add('on');
       });
     });
+  }
+
+  function drawLogin() {
+    const pill = $('#login-pill');
+    if (!pill) return;
+    const st = S.login || {};
+    pill.innerHTML = st.hasSession
+      ? `<span class="status c-mint">Đã đăng nhập</span>`
+      : `<span class="status c-slate">${st.cookieCount ? 'Cookie thiếu sessionid' : 'Chưa đăng nhập'}</span>`;
+    $('#login-actions').innerHTML = S.loginBusy
+      ? `<button class="btn primary" disabled><span class="spin"></span>Đang chờ bạn đăng nhập trong cửa sổ…</button>
+         <button class="btn ghost" data-act="login-cancel">Hủy</button>`
+      : `<button class="btn primary" data-act="login">${ic('external')}${st.hasSession ? 'Đăng nhập lại' : 'Đăng nhập bằng cửa sổ trình duyệt'}</button>
+         ${st.hasSession ? `<button class="btn danger" data-act="logout">${ic('x')}Đăng xuất</button>` : ''}`;
   }
 
   async function saveSettings() {
@@ -1124,6 +1323,7 @@
     }
     const all = [
       ...PAGES.map((p) => ({ sec: 'Đi tới', icon: p.icon, color: p.color, label: p.label, run: () => go(p.path) })),
+      { sec: 'Đi tới', icon: 'calendar', color: 'peach', label: 'Lịch tự động', run: () => go('/jobs?tab=schedules') },
       ...Object.entries(MODES).map(([k, m]) => ({ sec: 'Tác vụ mới', icon: m.icon, color: m.color, label: `Cào theo ${m.label.toLowerCase()}`, run: () => { S.mode = k; go('/scrape?mode=' + k); } })),
       { sec: 'Lệnh', icon: 'download', color: 'mint', label: 'Xuất toàn bộ bài viết (CSV)', run: () => download('/api/export/posts.csv') },
       { sec: 'Lệnh', icon: 'download', color: 'mint', label: 'Xuất toàn bộ hồ sơ (CSV)', run: () => download('/api/export/profiles.csv') },
@@ -1284,6 +1484,58 @@
       loadProfiles();
     },
     'close-drawer': closeDrawer,
+    'open-profile': (el) => openProfile(el.dataset.v),
+    'follow-daily': async (el) => {
+      const r = await createSchedule('profile', { username: el.dataset.v, limit: 30 }, 1440);
+      if (r) openProfile(el.dataset.v);
+    },
+    repeat: (el) => {
+      S.repeat = +el.dataset.v;
+      store.set('repeat', S.repeat);
+      $$('[data-act="repeat"]').forEach((b) => b.classList.toggle('on', b === el));
+      $('#repeat-hint').textContent = repeatHint();
+      $('#submit-btn').innerHTML = submitLabel();
+    },
+    'run-schedule': async (el) => {
+      const r = await api(`/schedules/${el.dataset.id}/run`, { method: 'POST' });
+      upsertJob(r.job);
+      upsertSchedule(r.schedule);
+      toast(r.skipped ? 'Lượt trước vẫn đang chạy' : `Đã chạy: ${r.schedule.label}`, r.skipped ? 'info' : 'party');
+    },
+    'delete-schedule': async (el) => {
+      const x = S.schedules.find((y) => y.id === el.dataset.id);
+      if (!(await confirmBox({ title: 'Xóa lịch này?', text: `Scrat sẽ ngừng tự cào ${esc(x ? x.label : '')}. Dữ liệu đã cào vẫn được giữ.`, ok: 'Xóa lịch', danger: true, icon: 'calendar' }))) return;
+      await api('/schedules/' + el.dataset.id, { method: 'DELETE' });
+      S.schedules = S.schedules.filter((y) => y.id !== el.dataset.id);
+      drawSchedules();
+      toast('Đã xóa lịch');
+    },
+    login: async () => {
+      S.loginBusy = true;
+      drawLogin();
+      toast('Đăng nhập Threads trong cửa sổ vừa mở, Scrat sẽ tự nhận cookie', 'info');
+      try {
+        S.login = await api('/login', { method: 'POST' });
+        toast('Đăng nhập thành công!', 'party');
+        const st = await api('/settings');
+        const ta = $('#view [data-s="cookies"]');
+        if (ta) ta.value = st.cookies;
+      } catch (e) {
+        toast(e.message, 'err');
+      } finally {
+        S.loginBusy = false;
+        drawLogin();
+      }
+    },
+    'login-cancel': async () => { await api('/login/cancel', { method: 'POST' }); },
+    logout: async () => {
+      if (!(await confirmBox({ title: 'Đăng xuất?', text: 'Cookie đăng nhập sẽ bị xóa khỏi Scrat.', ok: 'Đăng xuất', danger: true, icon: 'cookie', color: 'lemon' }))) return;
+      S.login = await api('/login', { method: 'DELETE' });
+      const ta = $('#view [data-s="cookies"]');
+      if (ta) ta.value = '';
+      drawLogin();
+      toast('Đã đăng xuất');
+    },
 
     theme: (el) => { applyTheme(el.dataset.v); $$('[data-act="theme"]').forEach((b) => b.classList.toggle('on', b === el)); },
     'save-settings': saveSettings,
@@ -1312,6 +1564,25 @@
       e.preventDefault();
       Promise.resolve(fn(el, e)).catch((err) => toast(err.message, 'err'));
     }
+  });
+
+  const CHANGES = {
+    'toggle-schedule': async (el) => {
+      try {
+        upsertSchedule(await api('/schedules/' + el.dataset.id, { method: 'PATCH', body: { enabled: el.checked } }));
+        toast(el.checked ? 'Đã bật lịch' : 'Đã tạm dừng lịch');
+      } catch (e) { el.checked = !el.checked; toast(e.message, 'err'); }
+    },
+    'sched-every': async (el) => {
+      try {
+        upsertSchedule(await api('/schedules/' + el.dataset.id, { method: 'PATCH', body: { every: +el.value } }));
+        toast(`Đã đổi chu kỳ: ${everyLabel(+el.value).toLowerCase()}`);
+      } catch (e) { toast(e.message, 'err'); }
+    },
+  };
+  document.addEventListener('change', (e) => {
+    const el = e.target.closest('[data-change]');
+    if (el && CHANGES[el.dataset.change]) CHANGES[el.dataset.change](el);
   });
 
   document.addEventListener('keydown', (e) => {
@@ -1362,12 +1633,15 @@
       const j = JSON.parse(e.data);
       const prev = S.jobs.find((x) => x.id === j.id);
       upsertJob(j);
+      const sch = j.schedule_id && S.schedules.find((x) => x.id === j.schedule_id);
+      if (sch && sch.last_job_id === j.id) upsertSchedule({ ...sch, last_status: j.status, last_posts: j.stats.posts });
       if (prev && prev.status === 'running' && j.status !== 'running') {
         if (j.status === 'done') toast(`Xong “${j.label}”: ${j.stats.posts} bài viết`, 'party', { label: 'Xem dữ liệu', run: () => ACTIONS['job-data']({ dataset: { id: j.id } }) });
         else if (j.status === 'failed') toast(`“${j.label}” lỗi: ${j.error}`, 'err');
       }
     });
     es.addEventListener('data', refreshOnData);
+    es.addEventListener('schedule', (e) => upsertSchedule(JSON.parse(e.data)));
     es.onopen = () => { if (S.jobsLoaded) loadJobs().then(() => S.route.id === 'jobs' && drawJobs()); };
   }
 

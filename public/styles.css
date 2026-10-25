@@ -273,7 +273,7 @@ kbd {
 .chip .x { opacity: .6; }
 .chip b { font-weight: 900; }
 
-.switch { position: relative; width: 46px; height: 28px; flex: none; }
+.switch { position: relative; display: inline-block; vertical-align: middle; width: 46px; height: 28px; flex: none; }
 .switch input { position: absolute; opacity: 0; inset: 0; cursor: pointer; z-index: 1; margin: 0; }
 .switch span { position: absolute; inset: 0; border-radius: 99px; background: var(--line); transition: background .2s; }
 .switch span::after { content: ''; position: absolute; left: 3px; top: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.2); transition: transform .25s cubic-bezier(.34,1.56,.64,1); }
@@ -589,3 +589,22 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   .bulkbar.on { transform: none; }
   .bulkbar .lbl { display: none; }
 }
+
+/* ---------- Lịch tự động, đăng nhập, biểu đồ hồ sơ ---------- */
+.job.paused { opacity: .72; }
+.job.paused .tile { filter: grayscale(.6); }
+details.adv { margin-top: 14px; border-top: 1px dashed var(--line); padding-top: 10px; }
+details.adv summary { cursor: pointer; font-weight: 800; font-size: 13px; color: var(--muted); list-style: none; display: inline-flex; align-items: center; gap: 6px; }
+details.adv summary::-webkit-details-marker { display: none; }
+details.adv summary .ic { transition: transform .2s; }
+details.adv[open] summary .ic { transform: rotate(90deg); }
+.spin { width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spark { padding: 12px; border-radius: var(--r); background: var(--surface-2); border: 1px solid var(--line); }
+.spark svg { width: 100%; height: auto; display: block; overflow: visible; }
+.spark-area { fill: var(--grape-bg); }
+.spark-line { fill: none; stroke: var(--grape); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.spark-dot { fill: var(--surface); stroke: var(--grape); stroke-width: 3; vector-effect: non-scaling-stroke; }
+.spark-foot { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; font-size: 12px; font-weight: 750; color: var(--muted); }
+.spark-foot .up { color: var(--mint); }
+.spark-foot .down { color: var(--danger); }

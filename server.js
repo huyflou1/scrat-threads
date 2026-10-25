@@ -7,6 +7,8 @@ const { Scraper } = require('./src/scraper');
 const { JobManager, publicJob } = require('./src/jobs');
 const { filterPosts, filterProfiles, toCSV, toJSON, engagement } = require('./src/query');
 const { seedDemo } = require('./src/demo');
+const { Scheduler } = require('./src/schedules');
+const { parseCookies } = require('./src/scraper');
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
@@ -15,6 +17,7 @@ const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, 'data', 'db.json
 const store = new Store(DATA_FILE);
 const scraper = new Scraper();
 const jobs = new JobManager(store, scraper);
+const scheduler = new Scheduler(store, jobs);
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
@@ -130,6 +133,31 @@ app.get('/api/profiles', wrap((req) => {
   return { total: items.length, items: items.map((u) => ({ ...u, post_count: counts.get(u.username) || 0 })) };
 }));
 
+app.get('/api/profiles/:username', wrap((req, res) => {
+  const u = store.data.profiles[req.params.username];
+  const posts = store.listPosts().filter((p) => p.username === req.params.username);
+  if (!u && !posts.length) return res.status(404).json({ error: 'Không tìm thấy hồ sơ' });
+  const own = posts.filter((p) => !p.parent_code);
+  const sum = (k) => own.reduce((a, p) => a + (p[k] || 0), 0);
+  const n = own.length || 1;
+  const avgEng = own.reduce((a, p) => a + engagement(p), 0) / n;
+  const followers = u ? u.follower_count : 0;
+  return {
+    profile: u || { username: req.params.username, full_name: posts[0].full_name, avatar: posts[0].avatar, verified: posts[0].verified, follower_count: 0, history: [] },
+    summary: {
+      posts: own.length,
+      replies: posts.length - own.length,
+      avg_likes: Math.round(sum('like_count') / n),
+      avg_replies: Math.round(sum('reply_count') / n),
+      // Tỉ lệ tương tác: tương tác trung bình mỗi bài / số người theo dõi
+      engagement_rate: followers ? avgEng / followers : null,
+      media_ratio: own.filter((p) => p.media && p.media.length).length / n,
+    },
+    topPosts: filterPosts(own, { sort: 'engagement' }).slice(0, 5),
+    schedules: scheduler.list().filter((s) => s.type === 'profile' && s.raw.username === req.params.username),
+  };
+}));
+
 app.post('/api/profiles/delete', wrap((req) => ({ removed: store.deleteProfiles(req.body.usernames || []) })));
 
 app.get('/api/export/:kind.:fmt', (req, res) => {
@@ -170,6 +198,45 @@ app.get('/api/img', async (req, res) => {
   }
 });
 
+/* ---------- Lịch tự động ---------- */
+app.get('/api/schedules', wrap(() => scheduler.list().map((s) => {
+  const j = s.last_job_id && store.getJob(s.last_job_id);
+  return { ...s, last_status: j ? j.status : null, last_posts: j ? j.stats.posts : null };
+})));
+app.post('/api/schedules', wrap((req) => {
+  const { schedule, job } = scheduler.create(req.body.type, req.body, req.body.every);
+  return { schedule, job: publicJob(job) };
+}));
+app.patch('/api/schedules/:id', wrap((req, res) => scheduler.update(req.params.id, req.body || {}) || res.status(404).json({ error: 'Không tìm thấy lịch' })));
+app.delete('/api/schedules/:id', wrap((req) => ({ removed: scheduler.remove(req.params.id) })));
+app.post('/api/schedules/:id/run', wrap((req, res) => {
+  const r = scheduler.run(req.params.id);
+  if (!r) return res.status(404).json({ error: 'Không tìm thấy lịch' });
+  return { schedule: r.schedule, job: publicJob(r.job), skipped: !!r.skipped };
+}));
+
+/* ---------- Đăng nhập ---------- */
+function loginState() {
+  const cookies = parseCookies(store.getSettings().cookies);
+  return {
+    hasSession: cookies.some((c) => c.name === 'sessionid' && c.value),
+    cookieCount: cookies.length,
+    windowOpen: !!scraper.login,
+  };
+}
+app.get('/api/login', wrap(() => loginState()));
+app.post('/api/login', async (req, res) => {
+  try {
+    const cookies = await scraper.interactiveLogin(store.getSettings());
+    store.updateSettings({ cookies: JSON.stringify(cookies) });
+    res.json(loginState());
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+app.post('/api/login/cancel', wrap(() => { scraper.cancelLogin(); return loginState(); }));
+app.delete('/api/login', wrap(() => { store.updateSettings({ cookies: '' }); return loginState(); }));
+
 /* ---------- Cài đặt ---------- */
 app.get('/api/settings', wrap(() => store.getSettings()));
 app.put('/api/settings', wrap((req) => {
@@ -207,6 +274,7 @@ const broadcast = (event, data) => {
   for (const c of clients) c.write(msg);
 };
 jobs.on('job', (j) => broadcast('job', j));
+jobs.on('schedule', (s) => broadcast('schedule', s));
 let dataTimer = null;
 jobs.on('data', () => {
   if (dataTimer) return;

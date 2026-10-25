@@ -25,7 +25,7 @@ class Store {
   constructor(file) {
     this.file = file;
     this.timer = null;
-    this.data = { posts: {}, profiles: {}, jobs: [], settings: { ...DEFAULT_SETTINGS } };
+    this.data = { posts: {}, profiles: {}, jobs: [], schedules: [], settings: { ...DEFAULT_SETTINGS } };
     this.load();
   }
 
@@ -36,6 +36,7 @@ class Store {
         posts: raw.posts || {},
         profiles: raw.profiles || {},
         jobs: raw.jobs || [],
+        schedules: raw.schedules || [],
         settings: { ...DEFAULT_SETTINGS, ...(raw.settings || {}) },
       };
       // Tác vụ đang chạy khi tắt app thì coi như bị gián đoạn

@@ -103,6 +103,55 @@ class Scraper {
   async close() {
     if (this.browser) await this.browser.close().catch(() => {});
     this.browser = null;
+    if (this.login) await this.login.browser.close().catch(() => {});
+  }
+
+  /**
+   * Mở cửa sổ trình duyệt thật để người dùng tự đăng nhập Threads,
+   * chờ tới khi có cookie `sessionid` rồi trả về danh sách cookie.
+   * Cần máy có màn hình (không chạy được trên server không giao diện).
+   */
+  async interactiveLogin(settings, { timeoutMs = 5 * 60000 } = {}) {
+    if (this.login) throw new Error('Cửa sổ đăng nhập đang mở');
+    const { chromium } = require('playwright');
+    let browser;
+    try {
+      browser = await chromium.launch({
+        headless: false,
+        proxy: parseProxy(settings.proxy),
+        args: ['--disable-blink-features=AutomationControlled'],
+      });
+    } catch (e) {
+      if (/display|XServer|headed/i.test(e.message)) {
+        throw new Error('Máy này không có màn hình để mở cửa sổ đăng nhập — hãy dán cookie thủ công');
+      }
+      throw e;
+    }
+    this.login = { browser, cancelled: false };
+    try {
+      const context = await browser.newContext({ userAgent: settings.userAgent || DEFAULT_UA, locale: 'vi-VN' });
+      const page = await context.newPage();
+      await page.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' }).catch(() => {});
+      const end = Date.now() + timeoutMs;
+      while (Date.now() < end) {
+        if (this.login.cancelled || !browser.isConnected() || page.isClosed()) throw new Error('Đã đóng cửa sổ đăng nhập');
+        const cookies = await context.cookies(BASE);
+        if (cookies.some((c) => c.name === 'sessionid' && c.value)) {
+          // Chờ thêm chút để các cookie phụ (csrftoken, ds_user_id…) được ghi
+          await new Promise((r) => setTimeout(r, 1500));
+          return (await context.cookies(BASE)).map(({ name, value, domain, path, httpOnly, secure }) => ({ name, value, domain, path, httpOnly, secure }));
+        }
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+      throw new Error('Hết thời gian chờ đăng nhập (5 phút)');
+    } finally {
+      await browser.close().catch(() => {});
+      this.login = null;
+    }
+  }
+
+  cancelLogin() {
+    if (this.login) this.login.cancelled = true;
   }
 
   /**
