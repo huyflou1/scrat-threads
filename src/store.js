@@ -19,13 +19,25 @@ const DEFAULT_SETTINGS = {
   userAgent: '',
   cookies: '',
   includeReplies: true,
+  anthropicApiKey: '',
+  threadsToken: '',
 };
+
+const SECRET_KEYS = ['anthropicApiKey', 'threadsToken'];
+const MASK = '••••';
+
+/** Cài đặt gửi cho giao diện: che khóa bí mật, chỉ để lộ 4 ký tự cuối. */
+function publicSettings(s) {
+  const out = { ...s };
+  for (const k of SECRET_KEYS) out[k] = s[k] ? MASK + s[k].slice(-4) : '';
+  return out;
+}
 
 class Store {
   constructor(file) {
     this.file = file;
     this.timer = null;
-    this.data = { posts: {}, profiles: {}, jobs: [], schedules: [], notifications: [], settings: { ...DEFAULT_SETTINGS } };
+    this.data = { posts: {}, profiles: {}, jobs: [], schedules: [], notifications: [], outbox: [], settings: { ...DEFAULT_SETTINGS } };
     this.load();
   }
 
@@ -37,6 +49,7 @@ class Store {
         profiles: raw.profiles || {},
         jobs: raw.jobs || [],
         schedules: raw.schedules || [],
+        outbox: raw.outbox || [],
         notifications: raw.notifications || [],
         settings: { ...DEFAULT_SETTINGS, ...(raw.settings || {}) },
       };
@@ -200,7 +213,10 @@ class Store {
       } else if (typeof def === 'boolean') {
         s[k] = !!patch[k];
       } else {
-        s[k] = String(patch[k] ?? '');
+        const v = String(patch[k] ?? '');
+        // Giao diện chỉ nhận bản che (••••abcd) của khóa bí mật; gửi lại bản che nghĩa là giữ nguyên
+        if (SECRET_KEYS.includes(k) && v.startsWith(MASK)) continue;
+        s[k] = v.trim();
       }
     }
     s.concurrency = Math.min(3, Math.max(1, Math.round(s.concurrency)));
@@ -212,7 +228,8 @@ class Store {
   /* ---------- Sao lưu / khôi phục ---------- */
   /** Toàn bộ dữ liệu, KHÔNG kèm cookie đăng nhập (dữ liệu nhạy cảm). */
   exportAll() {
-    const { cookies, ...settings } = this.data.settings;
+    const settings = { ...this.data.settings };
+    for (const k of ['cookies', ...SECRET_KEYS]) delete settings[k];
     return {
       app: 'scrat-threads',
       version: 1,
@@ -281,4 +298,4 @@ class Store {
   }
 }
 
-module.exports = { Store, DEFAULT_SETTINGS };
+module.exports = { Store, DEFAULT_SETTINGS, publicSettings, SECRET_KEYS };

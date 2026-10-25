@@ -2,7 +2,10 @@
 
 const path = require('path');
 const express = require('express');
-const { Store } = require('./src/store');
+const { Store, publicSettings } = require('./src/store');
+const ai = require('./src/ai');
+const threadsApi = require('./src/threads-api');
+const { Outbox } = require('./src/outbox');
 const { Scraper } = require('./src/scraper');
 const { JobManager, publicJob } = require('./src/jobs');
 const { filterPosts, filterProfiles, toCSV, toJSON, toXLSXFile, engagement } = require('./src/query');
@@ -20,6 +23,10 @@ const store = new Store(DATA_FILE);
 const scraper = new Scraper();
 const jobs = new JobManager(store, scraper);
 const scheduler = new Scheduler(store, jobs);
+const outbox = new Outbox(store, {
+  onChange: (p) => broadcast('outbox', p),
+  onNotify: (n) => broadcast('notify', store.addNotification(n)),
+});
 
 const app = express();
 const auth = createAuth(process.env.APP_PASSWORD || '');
@@ -237,6 +244,70 @@ app.post('/api/schedules/:id/run', wrap((req, res) => {
   return { schedule: r.schedule, job: publicJob(r.job), skipped: !!r.skipped };
 }));
 
+/* ---------- Viết bài bằng AI ---------- */
+app.get('/api/ai/models', wrap(() => ({
+  models: ai.MODELS.map(({ id, label, tag }) => ({ id, label, tag })),
+  hasKey: !!(store.getSettings().anthropicApiKey || process.env.ANTHROPIC_API_KEY),
+  limit: ai.LIMIT,
+})));
+
+app.post('/api/ai/pick', wrap((req) => ai.pickModel({
+  input: req.body.input,
+  length: req.body.length,
+  styleExamples: req.body.styleFrom ? 1 : 0,
+})));
+
+/** Bài nổi bật của một tài khoản trong kho, dùng làm mẫu giọng văn. */
+function styleExamples(username) {
+  if (!username) return [];
+  const own = store.listPosts().filter((p) => p.username === username && !p.parent_code && p.text);
+  return filterPosts(own, { sort: 'engagement' }).slice(0, 5).map((p) => p.text.slice(0, 600));
+}
+
+app.post('/api/ai/generate', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const examples = styleExamples(b.styleFrom);
+    if (b.styleFrom && !examples.length) throw new Error(`Kho chưa có bài viết nào của @${b.styleFrom} để học giọng văn`);
+    res.json(await ai.generate({
+      apiKey: store.getSettings().anthropicApiKey,
+      input: b.input,
+      tone: b.tone,
+      length: b.length,
+      lang: b.lang,
+      hashtags: !!b.hashtags,
+      emoji: !!b.emoji,
+      model: b.model,
+      examples,
+    }));
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+/* ---------- Hàng đợi đăng bài ---------- */
+app.get('/api/outbox', wrap(() => outbox.list()));
+app.post('/api/outbox', wrap((req) => outbox.create(req.body || {})));
+app.patch('/api/outbox/:id', wrap((req, res) => outbox.update(req.params.id, req.body || {}) || res.status(404).json({ error: 'Không tìm thấy bài' })));
+app.delete('/api/outbox/:id', wrap((req) => ({ removed: outbox.remove(req.params.id) })));
+app.post('/api/outbox/:id/publish', async (req, res) => {
+  try {
+    res.json(await outbox.publishNow(req.params.id));
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.get('/api/threads/me', async (req, res) => {
+  try {
+    const token = store.getSettings().threadsToken;
+    const [profile, q] = await Promise.all([threadsApi.me(token), threadsApi.quota(token).catch(() => null)]);
+    res.json({ ...profile, quota: q });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
 /* ---------- Thông báo ---------- */
 app.get('/api/notifications', wrap(() => store.data.notifications));
 app.post('/api/notifications/read', wrap((req) => {
@@ -272,11 +343,11 @@ app.post('/api/login/cancel', wrap(() => { scraper.cancelLogin(); return loginSt
 app.delete('/api/login', wrap(() => { store.updateSettings({ cookies: '' }); return loginState(); }));
 
 /* ---------- Cài đặt ---------- */
-app.get('/api/settings', wrap(() => store.getSettings()));
+app.get('/api/settings', wrap(() => publicSettings(store.getSettings())));
 app.put('/api/settings', wrap((req) => {
   const s = store.updateSettings(req.body || {});
   jobs.pump();
-  return s;
+  return publicSettings(s);
 }));
 
 app.get('/api/backup', (req, res) => {
