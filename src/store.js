@@ -25,7 +25,7 @@ class Store {
   constructor(file) {
     this.file = file;
     this.timer = null;
-    this.data = { posts: {}, profiles: {}, jobs: [], schedules: [], settings: { ...DEFAULT_SETTINGS } };
+    this.data = { posts: {}, profiles: {}, jobs: [], schedules: [], notifications: [], settings: { ...DEFAULT_SETTINGS } };
     this.load();
   }
 
@@ -37,6 +37,7 @@ class Store {
         profiles: raw.profiles || {},
         jobs: raw.jobs || [],
         schedules: raw.schedules || [],
+        notifications: raw.notifications || [],
         settings: { ...DEFAULT_SETTINGS, ...(raw.settings || {}) },
       };
       // Tác vụ đang chạy khi tắt app thì coi như bị gián đoạn
@@ -72,7 +73,10 @@ class Store {
     const now = new Date().toISOString();
     for (const p of posts) {
       const prev = this.data.posts[p.id];
-      if (!prev) added++;
+      if (!prev) {
+        added++;
+        if (meta.addedIds) meta.addedIds.push(p.id);
+      }
       this.data.posts[p.id] = {
         ...prev,
         ...p,
@@ -156,6 +160,21 @@ class Store {
     this.data.jobs = this.data.jobs.filter((j) => !predicate(j));
     this.save();
     return before - this.data.jobs.length;
+  }
+
+  /* ---------- Thông báo ---------- */
+  addNotification(n) {
+    const item = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), t: new Date().toISOString(), read: false, ...n };
+    this.data.notifications.unshift(item);
+    this.data.notifications = this.data.notifications.slice(0, 100);
+    this.save();
+    return item;
+  }
+
+  markNotificationsRead(ids) {
+    const set = ids ? new Set(ids) : null;
+    for (const n of this.data.notifications) if (!set || set.has(n.id)) n.read = true;
+    this.save();
   }
 
   /* ---------- Cài đặt ---------- */

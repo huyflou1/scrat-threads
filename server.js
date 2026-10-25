@@ -5,9 +5,10 @@ const express = require('express');
 const { Store } = require('./src/store');
 const { Scraper } = require('./src/scraper');
 const { JobManager, publicJob } = require('./src/jobs');
-const { filterPosts, filterProfiles, toCSV, toJSON, engagement } = require('./src/query');
+const { filterPosts, filterProfiles, toCSV, toJSON, toXLSXFile, engagement } = require('./src/query');
 const { seedDemo } = require('./src/demo');
 const { Scheduler } = require('./src/schedules');
+const { scheduleNotification } = require('./src/notify');
 const { parseCookies } = require('./src/scraper');
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -162,7 +163,7 @@ app.post('/api/profiles/delete', wrap((req) => ({ removed: store.deleteProfiles(
 
 app.get('/api/export/:kind.:fmt', (req, res) => {
   const { kind, fmt } = req.params;
-  if (!['posts', 'profiles'].includes(kind) || !['csv', 'json'].includes(fmt)) {
+  if (!['posts', 'profiles'].includes(kind) || !['csv', 'json', 'xlsx'].includes(fmt)) {
     return res.status(400).json({ error: 'Định dạng không hỗ trợ' });
   }
   const rows = kind === 'posts'
@@ -170,6 +171,10 @@ app.get('/api/export/:kind.:fmt', (req, res) => {
     : filterProfiles(store.listProfiles(), req.query);
   const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
   res.setHeader('Content-Disposition', `attachment; filename="threads-${kind}-${stamp}.${fmt}"`);
+  if (fmt === 'xlsx') {
+    res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    return res.send(toXLSXFile(rows, kind));
+  }
   res.type(fmt === 'csv' ? 'text/csv; charset=utf-8' : 'application/json; charset=utf-8');
   res.send(fmt === 'csv' ? toCSV(rows, kind) : toJSON(rows));
 });
@@ -213,6 +218,18 @@ app.post('/api/schedules/:id/run', wrap((req, res) => {
   const r = scheduler.run(req.params.id);
   if (!r) return res.status(404).json({ error: 'Không tìm thấy lịch' });
   return { schedule: r.schedule, job: publicJob(r.job), skipped: !!r.skipped };
+}));
+
+/* ---------- Thông báo ---------- */
+app.get('/api/notifications', wrap(() => store.data.notifications));
+app.post('/api/notifications/read', wrap((req) => {
+  store.markNotificationsRead(Array.isArray(req.body.ids) ? req.body.ids : null);
+  return { ok: true };
+}));
+app.delete('/api/notifications', wrap(() => {
+  store.data.notifications = [];
+  store.save();
+  return { ok: true };
 }));
 
 /* ---------- Đăng nhập ---------- */
@@ -275,6 +292,10 @@ const broadcast = (event, data) => {
 };
 jobs.on('job', (j) => broadcast('job', j));
 jobs.on('schedule', (s) => broadcast('schedule', s));
+jobs.on('finished', (job) => {
+  const n = scheduleNotification(job, job.schedule_id && scheduler.get(job.schedule_id), (id) => store.data.posts[id]);
+  if (n) broadcast('notify', store.addNotification(n));
+});
 let dataTimer = null;
 jobs.on('data', () => {
   if (dataTimer) return;

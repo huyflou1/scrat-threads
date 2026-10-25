@@ -64,3 +64,27 @@ test('lịch có đầu vào hỏng sẽ tự tắt', () => {
   assert.equal(schedule.enabled, false);
   assert.match(schedule.error, /không hợp lệ/);
 });
+
+test('thông báo: bỏ qua lượt đầu, báo bài mới từ lượt sau, báo lỗi', () => {
+  const { scheduleNotification } = require('../src/notify');
+  const posts = { a: { id: 'a', username: 'zuck', text: 'Bài cũ hơn', published_at: '2026-01-01' }, b: { id: 'b', username: 'zuck', text: 'Bài mới nhất', published_at: '2026-02-01' } };
+  const job = { type: 'profile', input: { username: 'zuck' }, status: 'done', stats: { new_posts: 2 }, _newIds: ['a', 'b'] };
+  const get = (id) => posts[id];
+  assert.equal(scheduleNotification(job, { label: '@zuck', runs: 1 }, get), null);
+  const n = scheduleNotification(job, { label: '@zuck', runs: 2 }, get);
+  assert.equal(n.title, '@zuck có 2 bài mới');
+  assert.equal(n.body, '@zuck: Bài mới nhất');
+  assert.equal(n.link, '#/library?username=zuck');
+  assert.equal(scheduleNotification({ ...job, stats: { new_posts: 0 } }, { label: '@zuck', runs: 5 }, get), null);
+  assert.equal(scheduleNotification({ ...job, status: 'failed', error: 'x' }, { label: '@zuck', runs: 1 }, get).kind, 'error');
+  assert.equal(scheduleNotification(job, null, get), null);
+});
+
+test('xlsx: zip hợp lệ và tên cột', () => {
+  const { crc32, colName, toXLSX } = require('../src/xlsx');
+  assert.equal(crc32(Buffer.from('hello')), 0x3610a686);
+  assert.deepEqual([0, 25, 26, 701, 702].map(colName), ['A', 'Z', 'AA', 'ZZ', 'AAA']);
+  const buf = toXLSX({ columns: [{ header: 'A' }], rows: [['x\u0001<'], [3]] });
+  assert.equal(buf.readUInt32LE(0), 0x04034b50);
+  assert.equal(buf.readUInt32LE(buf.length - 22), 0x06054b50);
+});

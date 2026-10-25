@@ -95,8 +95,31 @@ function toCSV(rows, kind) {
   return '﻿' + lines.join('\r\n');
 }
 
+// Độ rộng cột trong Excel (đơn vị ký tự)
+const WIDTHS = { text: 70, bio: 50, url: 42, media: 40, link: 30, full_name: 22, username: 18, published_at: 19, scraped_at: 19, hashtags: 24, mentions: 20, links: 30 };
+const DATE_KEYS = new Set(['published_at', 'scraped_at']);
+
+function xlsxValue(k, v) {
+  if (v == null) return null;
+  if (Array.isArray(v)) return v.map((x) => (typeof x === 'object' ? x.url : x)).join(' | ');
+  if (typeof v === 'boolean') return v ? 'có' : 'không';
+  // Ngày giờ dạng "2026-10-12 16:57:09" — dễ đọc và sắp xếp đúng
+  if (DATE_KEYS.has(k)) return new Date(v).toLocaleString('sv-SE');
+  return v;
+}
+
+function toXLSXFile(rows, kind) {
+  const { toXLSX } = require('./xlsx');
+  const cols = kind === 'profiles' ? PROFILE_COLUMNS : POST_COLUMNS;
+  return toXLSX({
+    sheetName: kind === 'profiles' ? 'Hồ sơ' : 'Bài viết',
+    columns: cols.map(([k, header]) => ({ header, width: WIDTHS[k] || 12 })),
+    rows: rows.map((r) => cols.map(([k]) => xlsxValue(k, r[k]))),
+  });
+}
+
 function toJSON(rows) {
   return JSON.stringify(rows.map(({ sources, history, ...r }) => r), null, 2);
 }
 
-module.exports = { filterPosts, filterProfiles, toCSV, toJSON, engagement };
+module.exports = { filterPosts, filterProfiles, toCSV, toJSON, toXLSXFile, engagement };

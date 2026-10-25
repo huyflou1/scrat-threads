@@ -139,6 +139,7 @@ class JobManager extends EventEmitter {
     this.running.delete(job.id);
     this.emitJob(job);
     this.emit('data');
+    this.emit('finished', job);
     this.pump();
   }
 
@@ -180,8 +181,10 @@ class JobManager extends EventEmitter {
     if (parentCode) {
       posts = posts.map((p) => (p.code !== parentCode ? { ...p, parent_code: parentCode } : p));
     }
-    const added = this.store.upsertPosts(posts, { source });
+    const addedIds = [];
+    const added = this.store.upsertPosts(posts, { source, addedIds });
     job.stats.new_posts += added;
+    (job._newIds = job._newIds || []).push(...addedIds);
     this.store.upsertProfiles([...session.acc.users.values()]);
     this.emit('data');
     return posts.length;
@@ -277,7 +280,7 @@ class JobManager extends EventEmitter {
 }
 
 function publicJob(j) {
-  const { _emitTimer, _base, ...rest } = j;
+  const { _emitTimer, _base, _newIds, ...rest } = j;
   return rest;
 }
 

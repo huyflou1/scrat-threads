@@ -63,6 +63,7 @@
     repeat: store.get('repeat', 0),
     postCache: new Map(),
     loginBusy: false,
+    notifs: [],
     openLogs: new Set(),
     settings: null,
     settingsDirty: false,
@@ -808,6 +809,16 @@
     else drawProfilesShell();
   }
 
+  const FORMATS = [['xlsx', 'Excel (.xlsx)', 'sheet', 'mint', 'Mở ngay bằng Excel, Google Sheets'], ['csv', 'CSV', 'rows', 'sky', 'Bảng tính đơn giản, có BOM UTF-8'], ['json', 'JSON', 'code', 'grape', 'Cho lập trình viên & sao lưu']];
+
+  function exportMenu(kind) {
+    return `<div class="pop-wrap">
+      <button class="btn primary" data-act="menu" aria-haspopup="true" aria-expanded="false">${ic('download')}Xuất file${ic('down', 'sm')}</button>
+      <div class="pop menu" role="menu">${FORMATS.map(([fmt, label, icon, color, hint]) => `
+        <button class="menu-item" role="menuitem" data-act="export" data-kind="${kind}" data-fmt="${fmt}">${tile(icon, color, 'sm')}<span><b>${label}</b><small>${hint}</small></span></button>`).join('')}
+      </div></div>`;
+  }
+
   function activeFilters() {
     const f = S.lib.f;
     const out = [];
@@ -836,8 +847,7 @@
           <button class="${L.view === 'grid' ? 'on' : ''}" data-act="lib-view" data-v="grid" aria-label="Dạng thẻ">${ic('grid', 'sm')}</button>
           <button class="${L.view === 'table' ? 'on' : ''}" data-act="lib-view" data-v="table" aria-label="Dạng bảng">${ic('rows', 'sm')}</button>
         </div>
-        <button class="btn primary" data-act="export" data-kind="posts" data-fmt="csv">${ic('download')}CSV</button>
-        <button class="btn" data-act="export" data-kind="posts" data-fmt="json">${ic('download')}JSON</button>
+        ${exportMenu('posts')}
       </div>
       <div class="block flat filter-panel ${L.showFilters ? '' : 'hide'}" id="filter-panel">
         <div class="field"><label>Tác giả</label><select class="select" data-f="username" id="f-author"><option value="">Tất cả</option></select></div>
@@ -967,6 +977,7 @@
     if (!n) return;
     bar.innerHTML = `<b>Đã chọn ${n}</b>
       <button class="btn sm" data-act="sel-all">${ic('check', 'sm')}<span class="lbl">Chọn hết trang</span></button>
+      <button class="btn sm" data-act="export-sel" data-fmt="xlsx">${ic('sheet', 'sm')}Excel</button>
       <button class="btn sm" data-act="export-sel" data-fmt="csv">${ic('download', 'sm')}CSV</button>
       <button class="btn sm" data-act="export-sel" data-fmt="json">${ic('download', 'sm')}JSON</button>
       <button class="btn sm danger" data-act="delete-sel">${ic('trash', 'sm')}<span class="lbl">Xóa</span></button>
@@ -1048,8 +1059,7 @@
         <select class="select" id="p-sort" style="width:auto" aria-label="Sắp xếp">
           ${[['followers', 'Nhiều người theo dõi'], ['recent', 'Cào gần đây'], ['name', 'Tên A→Z']].map(([k, l]) => `<option value="${k}" ${L.psort === k ? 'selected' : ''}>${l}</option>`).join('')}
         </select>
-        <button class="btn primary" data-act="export" data-kind="profiles" data-fmt="csv">${ic('download')}CSV</button>
-        <button class="btn" data-act="export" data-kind="profiles" data-fmt="json">${ic('download')}JSON</button>
+        ${exportMenu('profiles')}
       </div>
       <div class="result-info" id="result-info"></div>
       <div id="profile-list"><div class="profiles">${'<div class="skel"></div>'.repeat(6)}</div></div>`;
@@ -1311,6 +1321,67 @@
   }
 
   /* =====================================================
+     Popover & thông báo
+     ===================================================== */
+  function closePops(except) {
+    $$('.pop.on').forEach((p) => {
+      if (p === except) return;
+      p.classList.remove('on');
+      const b = p.previousElementSibling;
+      if (b) b.setAttribute('aria-expanded', 'false');
+    });
+  }
+  function togglePop(pop, btn) {
+    const on = !pop.classList.contains('on');
+    closePops(pop);
+    pop.classList.toggle('on', on);
+    btn.setAttribute('aria-expanded', on);
+    return on;
+  }
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.pop-wrap')) closePops();
+  }, true);
+
+  async function loadNotifs() {
+    try { S.notifs = await api('/notifications'); } catch { /* bỏ qua */ }
+    drawBell();
+  }
+
+  function drawBell() {
+    const n = S.notifs.filter((x) => !x.read).length;
+    $('#bell-count').textContent = n ? (n > 9 ? '9+' : n) : '';
+    $('#bell-btn').setAttribute('aria-label', n ? `Thông báo (${n} chưa đọc)` : 'Thông báo');
+  }
+
+  function drawNotifPop() {
+    const pop = $('#notif-pop');
+    const unread = S.notifs.some((x) => !x.read);
+    const perm = 'Notification' in window ? Notification.permission : 'unsupported';
+    pop.innerHTML = `
+      <div class="pop-head"><b>Thông báo</b>
+        ${unread ? `<button class="btn sm ghost" data-act="notif-read-all">${ic('check', 'sm')}Đã đọc hết</button>` : ''}
+        ${S.notifs.length ? `<button class="btn sm ghost icon" data-act="notif-clear" aria-label="Xóa tất cả" title="Xóa tất cả">${ic('trash', 'sm')}</button>` : ''}
+      </div>
+      <div class="pop-body">${S.notifs.length ? S.notifs.map((n) => `
+        <button class="notif ${n.read ? '' : 'unread'}" data-act="notif-open" data-id="${n.id}">
+          ${tile(n.kind === 'error' ? 'warn' : 'bell', n.kind === 'error' ? 'pink' : 'peach', 'sm')}
+          <span class="grow"><b>${esc(n.title)}</b>${n.body ? `<span>${esc(n.body)}</span>` : ''}<small>${ago(n.t)}</small></span>
+        </button>`).join('')
+        : empty('Chưa có thông báo', 'Khi hồ sơ bạn theo dõi bằng lịch tự động có bài mới, Scrat sẽ báo ở đây.', '', true)}</div>
+      ${perm === 'default' ? `<div class="pop-foot"><button class="btn sm soft" data-act="notif-browser">${ic('bell', 'sm')}Bật thông báo trên máy tính</button></div>` : ''}`;
+  }
+
+  function openNotifs() {
+    const pop = $('#notif-pop');
+    drawNotifPop();
+    if (!pop.classList.contains('on')) togglePop(pop, $('#bell-btn'));
+  }
+  $('#bell-btn').onclick = () => {
+    drawNotifPop();
+    togglePop($('#notif-pop'), $('#bell-btn'));
+  };
+
+  /* =====================================================
      Bảng lệnh (Ctrl+K)
      ===================================================== */
   const P = { items: [], idx: 0 };
@@ -1325,8 +1396,10 @@
       ...PAGES.map((p) => ({ sec: 'Đi tới', icon: p.icon, color: p.color, label: p.label, run: () => go(p.path) })),
       { sec: 'Đi tới', icon: 'calendar', color: 'peach', label: 'Lịch tự động', run: () => go('/jobs?tab=schedules') },
       ...Object.entries(MODES).map(([k, m]) => ({ sec: 'Tác vụ mới', icon: m.icon, color: m.color, label: `Cào theo ${m.label.toLowerCase()}`, run: () => { S.mode = k; go('/scrape?mode=' + k); } })),
-      { sec: 'Lệnh', icon: 'download', color: 'mint', label: 'Xuất toàn bộ bài viết (CSV)', run: () => download('/api/export/posts.csv') },
-      { sec: 'Lệnh', icon: 'download', color: 'mint', label: 'Xuất toàn bộ hồ sơ (CSV)', run: () => download('/api/export/profiles.csv') },
+      { sec: 'Lệnh', icon: 'sheet', color: 'mint', label: 'Xuất toàn bộ bài viết (Excel)', run: () => download('/api/export/posts.xlsx') },
+      { sec: 'Lệnh', icon: 'sheet', color: 'mint', label: 'Xuất toàn bộ hồ sơ (Excel)', run: () => download('/api/export/profiles.xlsx') },
+      { sec: 'Lệnh', icon: 'download', color: 'sky', label: 'Xuất toàn bộ bài viết (CSV)', run: () => download('/api/export/posts.csv') },
+      { sec: 'Lệnh', icon: 'bell', color: 'peach', label: 'Mở thông báo', run: () => openNotifs() },
       { sec: 'Lệnh', icon: isDark() ? 'sun' : 'moon', color: 'lemon', label: isDark() ? 'Chuyển giao diện sáng' : 'Chuyển giao diện tối', run: () => applyTheme(isDark() ? 'light' : 'dark') },
       { sec: 'Lệnh', icon: 'party', color: 'pink', label: 'Nạp dữ liệu mẫu', run: () => ACTIONS.demo() },
     ];
@@ -1465,7 +1538,9 @@
       drawPostsShell();
     },
     'reload-lib': () => (S.lib.tab === 'posts' ? loadPosts(true) : loadProfiles()),
+    menu: (el) => togglePop(el.nextElementSibling, el),
     export: (el) => {
+      closePops();
       const kind = el.dataset.kind;
       const q = kind === 'posts' && S.route.id === 'library' ? qs(S.lib.f) : kind === 'profiles' ? qs({ q: S.lib.pq, sort: S.lib.psort }) : '';
       download(`/api/export/${kind}.${el.dataset.fmt}${q ? '?' + q : ''}`);
@@ -1484,6 +1559,35 @@
       loadProfiles();
     },
     'close-drawer': closeDrawer,
+    'notif-open': async (el) => {
+      const n = S.notifs.find((x) => x.id === el.dataset.id);
+      closePops();
+      if (!n) return;
+      if (!n.read) {
+        n.read = true;
+        drawBell();
+        api('/notifications/read', { method: 'POST', body: { ids: [n.id] } }).catch(() => {});
+      }
+      if (n.link) go(n.link.replace(/^#/, ''));
+    },
+    'notif-read-all': async () => {
+      await api('/notifications/read', { method: 'POST', body: {} });
+      S.notifs.forEach((n) => (n.read = true));
+      drawBell();
+      drawNotifPop();
+    },
+    'notif-clear': async () => {
+      await api('/notifications', { method: 'DELETE' });
+      S.notifs = [];
+      drawBell();
+      drawNotifPop();
+    },
+    'notif-browser': async () => {
+      if (!('Notification' in window)) return toast('Trình duyệt không hỗ trợ thông báo', 'err');
+      const r = await Notification.requestPermission();
+      toast(r === 'granted' ? 'Đã bật thông báo trình duyệt' : 'Bạn chưa cho phép thông báo', r === 'granted' ? 'ok' : 'info');
+      drawNotifPop();
+    },
     'open-profile': (el) => openProfile(el.dataset.v),
     'follow-daily': async (el) => {
       const r = await createSchedule('profile', { username: el.dataset.v, limit: 30 }, 1440);
@@ -1591,7 +1695,8 @@
       e.preventDefault();
       $('#palette').classList.contains('on') ? closePalette() : openPalette();
     } else if (e.key === 'Escape') {
-      if ($('#palette').classList.contains('on')) closePalette();
+      if ($$('.pop.on').length) closePops();
+      else if ($('#palette').classList.contains('on')) closePalette();
       else if ($('#modal').classList.contains('on')) overlayClose && overlayClose();
       else if ($('#drawer').classList.contains('on')) closeDrawer();
       else if (S.lib.selected.size && S.route.id === 'library') ACTIONS['clear-sel']();
@@ -1642,6 +1747,18 @@
     });
     es.addEventListener('data', refreshOnData);
     es.addEventListener('schedule', (e) => upsertSchedule(JSON.parse(e.data)));
+    es.addEventListener('notify', (e) => {
+      const n = JSON.parse(e.data);
+      S.notifs.unshift(n);
+      drawBell();
+      if ($('#notif-pop').classList.contains('on')) drawNotifPop();
+      toast(n.title, n.kind === 'error' ? 'err' : 'party', n.link ? { label: 'Xem', run: () => ACTIONS['notif-open']({ dataset: { id: n.id } }) } : null);
+      // Báo ra hệ điều hành khi đang ở tab khác
+      if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+        const sys = new Notification(n.title, { body: n.body || '', tag: n.id });
+        sys.onclick = () => { window.focus(); ACTIONS['notif-open']({ dataset: { id: n.id } }); };
+      }
+    });
     es.onopen = () => { if (S.jobsLoaded) loadJobs().then(() => S.route.id === 'jobs' && drawJobs()); };
   }
 
@@ -1649,6 +1766,7 @@
 
   /* ---------- Khởi động ---------- */
   drawThemeBtn();
+  loadNotifs();
   loadJobs().then(() => { if (S.route.id === 'scrape') drawScrapeJobs(); });
   route();
   connectEvents();

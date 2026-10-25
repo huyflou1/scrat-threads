@@ -9,8 +9,10 @@
 | **Tổng quan** | Ô *cào nhanh* tự nhận diện @tên / link / từ khóa, thống kê, biểu đồ 14 ngày, tác giả và hashtag nổi bật, bài hot nhất |
 | **Cào dữ liệu** | 4 chế độ: **Hồ sơ**, **Bài viết** (kèm trả lời), **Từ khóa**, **Hàng loạt** (trộn tài khoản và link) |
 | **Tác vụ** | Tab **Hàng đợi**: chạy song song có giới hạn, tiến độ và nhật ký cập nhật trực tiếp (SSE), dừng / chạy lại. Tab **Lịch tự động**: cào lại định kỳ (mỗi giờ, 6 giờ, hằng ngày, hằng tuần), bật/tắt, đổi chu kỳ, chạy ngay |
-| **Kho dữ liệu** | Bài viết và hồ sơ; ngăn chi tiết hồ sơ có biểu đồ người theo dõi theo thời gian, lượt thích trung bình, tỉ lệ tương tác, bài nổi bật và nút *Theo dõi hằng ngày*; tìm kiếm không dấu, lọc theo tác giả / media / lượt thích / ngày, dạng thẻ hoặc bảng, chọn nhiều để xuất hoặc xóa, xuất **CSV** (mở được bằng Excel) và **JSON** |
+| **Kho dữ liệu** | Bài viết và hồ sơ; ngăn chi tiết hồ sơ có biểu đồ người theo dõi theo thời gian, lượt thích trung bình, tỉ lệ tương tác, bài nổi bật và nút *Theo dõi hằng ngày*; tìm kiếm không dấu, lọc theo tác giả / media / lượt thích / ngày, dạng thẻ hoặc bảng, chọn nhiều để xuất hoặc xóa, menu **Xuất file**: **Excel (.xlsx)** có dòng tiêu đề cố định và bộ lọc, **CSV** (UTF-8 BOM), **JSON** |
 | **Cài đặt** | **Đăng nhập bằng cửa sổ trình duyệt** (tự lấy cookie) hoặc dán cookie thủ công, chạy ẩn trình duyệt, độ trễ, số lần cuộn, proxy, User-Agent, giao diện, dữ liệu mẫu |
+
+**Thông báo** (biểu tượng chuông): khi lịch tự động tìm thấy bài mới hoặc bị lỗi, Scrat báo trong app và — nếu bạn cho phép — báo ra máy tính khi đang ở tab khác.
 
 Phím tắt: `Ctrl/⌘ K` mở bảng lệnh (dán link vào là cào luôn) · `/` tìm trong kho · `Ctrl Enter` chạy cào · `Esc` đóng.
 
@@ -49,7 +51,9 @@ src/extract.js     Trích xuất & chuẩn hóa bài viết / hồ sơ (thuần,
 src/scraper.js     Điều khiển trình duyệt Playwright
 src/jobs.js        Hàng đợi tác vụ, tiến độ, nhật ký
 src/schedules.js   Lịch cào tự động theo chu kỳ
+src/notify.js      Quy tắc tạo thông báo khi lịch có bài mới / lỗi
+src/xlsx.js        Ghi file Excel .xlsx không cần thư viện ngoài
 src/store.js       Lưu trữ bằng file JSON (ghi nguyên tử)
-src/query.js       Lọc, sắp xếp, xuất CSV/JSON
+src/query.js       Lọc, sắp xếp, xuất CSV/JSON/Excel
 public/            Giao diện (HTML/CSS/JS thuần, không cần build)
 ```

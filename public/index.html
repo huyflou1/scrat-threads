@@ -36,6 +36,12 @@
         </div>
         <div class="spacer"></div>
         <button class="live-pill" id="live-pill" title="Xem tác vụ đang chạy"><i></i><span></span></button>
+        <div class="pop-wrap">
+          <button class="btn icon ghost bell" id="bell-btn" aria-label="Thông báo" aria-haspopup="true" aria-expanded="false">
+            <svg class="ic"><use href="#i-bell" /></svg><span class="bell-count" id="bell-count"></span>
+          </button>
+          <div class="pop notif-pop" id="notif-pop" role="dialog" aria-label="Thông báo"></div>
+        </div>
         <button class="cmd-btn" id="cmd-btn" aria-label="Mở bảng lệnh">
           <svg class="ic"><use href="#i-search" /></svg><span>Tìm lệnh, dán link…</span><kbd>Ctrl K</kbd>
         </button>

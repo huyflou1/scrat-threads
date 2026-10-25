@@ -608,3 +608,49 @@ details.adv[open] summary .ic { transform: rotate(90deg); }
 .spark-foot { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; font-size: 12px; font-weight: 750; color: var(--muted); }
 .spark-foot .up { color: var(--mint); }
 .spark-foot .down { color: var(--danger); }
+
+/* ---------- Popover: menu xuất file & thông báo ---------- */
+.pop-wrap { position: relative; }
+.pop {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 50;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow-lg);
+  opacity: 0; transform: translateY(-6px) scale(.98); transform-origin: top right; pointer-events: none; visibility: hidden;
+  transition: opacity .15s, transform .18s cubic-bezier(.34,1.56,.64,1), visibility .18s;
+}
+.pop.on { opacity: 1; transform: none; pointer-events: auto; visibility: visible; }
+.menu { min-width: 280px; padding: 6px; }
+.menu-item {
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 10px; border: 0; border-radius: 12px;
+  background: none; cursor: pointer; text-align: left;
+}
+.menu-item:hover, .menu-item:focus-visible { background: var(--surface-2); }
+.menu-item b { display: block; font-weight: 850; font-size: 14px; }
+.menu-item small { display: block; color: var(--muted); font-weight: 650; font-size: 12px; }
+
+.bell { position: relative; }
+.bell-count {
+  position: absolute; top: 2px; right: 1px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px;
+  background: var(--pink); color: #fff; font-size: 10.5px; font-weight: 900; display: grid; place-items: center;
+  border: 2px solid var(--bg); animation: pop-in .35s cubic-bezier(.34,1.56,.64,1);
+}
+.bell-count:empty { display: none; }
+@keyframes pop-in { from { transform: scale(0); } }
+.notif-pop { width: 380px; display: flex; flex-direction: column; max-height: min(560px, 75vh); }
+.pop-head { display: flex; align-items: center; gap: 6px; padding: 12px 12px 10px 16px; border-bottom: 1px solid var(--line); }
+.pop-head b { flex: 1; font-weight: 900; font-size: 15px; }
+.pop-body { overflow: auto; padding: 6px; }
+.pop-foot { padding: 10px 12px; border-top: 1px solid var(--line); }
+.pop-foot .btn { width: 100%; }
+.notif { display: flex; gap: 12px; width: 100%; padding: 10px; border: 0; border-radius: 13px; background: none; text-align: left; cursor: pointer; position: relative; }
+.notif:hover { background: var(--surface-2); }
+.notif .grow { flex: 1; min-width: 0; }
+.notif b { display: block; font-weight: 800; font-size: 13.5px; }
+.notif span span, .notif .grow > span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--ink-2); font-size: 13px; font-weight: 600; }
+.notif small { color: var(--muted); font-weight: 700; font-size: 11.5px; }
+.notif.unread { background: color-mix(in srgb, var(--peach-bg) 55%, transparent); }
+.notif.unread::after { content: ''; position: absolute; right: 12px; top: 14px; width: 8px; height: 8px; border-radius: 50%; background: var(--peach); }
+
+@media (max-width: 640px) {
+  .notif-pop { position: fixed; left: 12px; right: 12px; top: 64px; width: auto; }
+  .menu { right: auto; left: 0; transform-origin: top left; }
+}
