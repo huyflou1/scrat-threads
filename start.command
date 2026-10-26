@@ -7,8 +7,8 @@ if ! command -v node >/dev/null 2>&1; then
   read -r -p "Nhấn Enter để đóng…" _; exit 1
 fi
 NODE_MAJOR=$(node -p 'process.versions.node.split(".")[0]')
-if [ "$NODE_MAJOR" -lt 18 ]; then
-  echo "❌ Cần Node.js 18 trở lên (máy đang có $(node -v))."
+if [ "$NODE_MAJOR" -lt 20 ]; then
+  echo "❌ Cần Node.js 20 trở lên (máy đang có $(node -v))."
   read -r -p "Nhấn Enter để đóng…" _; exit 1
 fi
 

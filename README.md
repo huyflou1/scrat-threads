@@ -19,7 +19,7 @@ Phím tắt: `Ctrl/⌘ K` mở bảng lệnh (dán link vào là cào luôn) · 
 
 ## Cài đặt & chạy
 
-Cần **Node.js 18 trở lên** ([tải bản LTS](https://nodejs.org)).
+Cần **Node.js 20 trở lên** ([tải bản LTS](https://nodejs.org)).
 
 **Cách nhanh nhất:** nhấp đúp vào `start.bat` (Windows) hoặc `start.command` (macOS). Lần đầu file sẽ tự cài thư viện và Chromium, sau đó tự mở trình duyệt. Trên Linux thì chạy `./start.sh`.
 
