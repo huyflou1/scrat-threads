@@ -20,6 +20,8 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
+      - name: Cài Chromium cho test đăng bài bằng trình duyệt
+        run: npx playwright install --with-deps chromium
       - name: Kiểm tra cú pháp
         run: for f in server.js src/*.js public/*.js scripts/*.js; do node --check "$f"; done
       - run: npm test

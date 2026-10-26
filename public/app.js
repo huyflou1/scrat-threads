@@ -1261,6 +1261,8 @@
     outbox: [],
     models: [],
     hasKey: false,
+    hasToken: false, // có cách đăng bài (token API hoặc phiên đăng nhập)
+    postVia: null,
     profiles: [],
     pick: null,
     manual: 0, // số lần đăng tay đang chạy — để không hiện 2 thông báo trùng
@@ -1274,6 +1276,8 @@
       if (!S.stats) S.stats = await api('/stats?tz=' + new Date().getTimezoneOffset()).catch(() => null);
       C.models = m.models;
       C.hasKey = m.hasKey;
+      C.postVia = m.postVia;
+      C.hasToken = !!m.postVia;
       C.outbox = ob;
       C.profiles = pr.items;
     } catch (e) {
@@ -1413,6 +1417,10 @@
     return `
       <div class="block-head" style="margin:0">${tile('send', 'mint')}<div><h2>${e.editingId ? 'Sửa bài' : 'Bản đăng'}</h2><p>${total > 1 ? `Chuỗi ${total} phần — mỗi phần trả lời phần trước` : 'Tối đa 500 ký tự mỗi phần (emoji tính theo byte)'}</p></div>
         ${e.editingId ? `<div class="act"><button class="btn sm ghost" data-act="ed-new">${ic('plus', 'sm')}Bài mới</button></div>` : ''}</div>
+      ${C.hasToken
+        ? `<div class="muted" style="font-size:12.5px;font-weight:750">${ic(C.postVia === 'api' ? 'shield' : 'globe', 'sm')} Đăng bằng ${C.postVia === 'api' ? 'Threads API (token)' : 'phiên đăng nhập Threads của bạn'} · đổi trong Cài đặt</div>`
+        : `<div class="callout c-lemon">${ic('info')}<div><b>Chưa kết nối tài khoản Threads.</b> Đăng nhập Threads trong Cài đặt là đăng được ngay (dùng chung phiên với việc cào), hoặc nhập Threads access token.
+        <div style="margin-top:8px"><button class="btn sm soft" data-act="go-token">${ic('sliders', 'sm')}Mở Cài đặt</button></div></div></div>`}
       <div class="stack" id="ed-parts">${e.parts.map((p, i) => `
         <div class="field part">
           <div class="row" style="justify-content:space-between">
@@ -1426,7 +1434,7 @@
       <div class="field">
         <label for="ed-img">Ảnh đính kèm phần đầu <span class="muted">(không bắt buộc)</span></label>
         <div class="input-ic">${ic('image')}<input class="input" id="ed-img" placeholder="https://… (link ảnh công khai, JPEG/PNG)" value="${esc(e.image_url)}" /></div>
-        <span class="hint">Threads tự tải ảnh từ link này, nên link phải mở được công khai.</span>
+        <span class="hint">Link phải mở được công khai (https), vì ảnh được tải từ link này.</span>
       </div>
       <div class="field">
         <span class="label">Thời điểm đăng</span>
@@ -1465,6 +1473,19 @@
     if (img) img.oninput = () => { e.image_url = img.value.trim(); };
     const at = $('#ed-at');
     if (at) at.oninput = () => { e.at = at.value; };
+  }
+
+  /** Chưa có token Threads: kiểm tra lại, rồi đưa người dùng tới ô nhập token. Trả về true nếu đã có. */
+  async function needToken() {
+    try { C.postVia = (await api('/ai/models')).postVia; C.hasToken = !!C.postVia; } catch { /* bỏ qua */ }
+    if (C.hasToken) return true;
+    const go2 = await confirmBox({
+      title: 'Chưa kết nối tài khoản Threads',
+      text: 'Hãy đăng nhập Threads trong Cài đặt (dùng chung cho cào và đăng bài), hoặc nhập Threads access token. Bạn có thể lưu nháp trước.',
+      ok: 'Mở Cài đặt', icon: 'cookie', color: 'lemon',
+    });
+    if (go2) go('/settings?focus=threads');
+    return false;
   }
 
   async function submitEditor(mode) {
@@ -1613,10 +1634,16 @@
               <span class="hint">Tạo tại console.anthropic.com → API Keys. Để trống thì dùng biến môi trường ANTHROPIC_API_KEY.</span>
             </div>
             <div class="field">
-              <label for="s-tt">Threads access token</label>
+              <label for="s-tt">Threads access token <span class="muted">(không bắt buộc nếu đã đăng nhập Threads)</span></label>
               <input class="input" id="s-tt" type="password" autocomplete="off" data-s="threadsToken" placeholder="THAA…" value="${esc(s.threadsToken)}" />
               <div class="row" style="gap:8px"><button class="btn sm" data-act="threads-check">${ic('shield', 'sm')}Kiểm tra kết nối</button><span id="threads-me"></span></div>
             </div>
+          </div>
+          <div class="set-row" style="margin-top:12px;border-top:1px dashed var(--line)">
+            <div class="txt"><b>Cách đăng bài</b><span>Tự động: có token thì dùng Threads API, không thì dùng phiên đăng nhập Threads ở trên</span></div>
+            <div class="ctl" style="width:240px"><select class="select" data-s="postMethod">
+              ${[['auto', 'Tự động'], ['browser', 'Phiên đăng nhập (trình duyệt)'], ['api', 'Threads API (token)']].map(([v, l]) => `<option value="${v}" ${s.postMethod === v ? 'selected' : ''}>${l}</option>`).join('')}
+            </select></div>
           </div>
           <details class="adv">
             <summary>${ic('chevron', 'sm')}Cách lấy Threads access token</summary>
@@ -1648,6 +1675,16 @@
       </div>`;
 
     drawLogin();
+    if (S.route.query.focus === 'threads') {
+      // Chạy sau route() (route cuộn về đầu trang khi render xong)
+      setTimeout(() => {
+        const login = $('#login-actions');
+        const sec = login && login.closest('section');
+        if (!sec) return;
+        sec.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        sec.classList.add('flash');
+      }, 80);
+    }
     api('/auth').then((a) => {
       const row = $('#auth-row');
       if (!row) return;
@@ -1988,11 +2025,14 @@
     'ed-quick': (el) => { C.editor.at = el.dataset.at; drawEditor(); },
     'ed-new': () => { C.editor = { parts: [''], image_url: '', when: 'now', at: '', editingId: null, model: null }; drawEditor(); },
     'ed-draft': () => submitEditor('draft'),
+    'go-token': () => go('/settings?focus=threads'),
     'ed-submit': async () => {
+      if (!C.hasToken && !(await needToken())) return;
       if (C.editor.when === 'now' && !(await confirmBox({ title: 'Đăng ngay lên Threads?', text: 'Bài sẽ hiện công khai trên tài khoản Threads của bạn.', ok: 'Đăng ngay', icon: 'send', color: 'mint' }))) return;
       submitEditor(C.editor.when);
     },
     'ob-publish': async (el) => {
+      if (!C.hasToken && !(await needToken())) return;
       if (!(await confirmBox({ title: 'Đăng bài này ngay?', text: 'Bài sẽ hiện công khai trên tài khoản Threads của bạn.', ok: 'Đăng ngay', icon: 'send', color: 'mint' }))) return;
       toast('Đang đăng lên Threads…', 'info');
       try {

@@ -47,16 +47,24 @@ HOST=0.0.0.0 APP_PASSWORD='mật-khẩu-của-bạn' npm start
 
 ### Viết bài bằng AI & đăng lên Threads
 
-Vào **Cài đặt → AI & Đăng bài** và nhập 2 khóa. Cả hai chỉ lưu trên máy bạn, giao diện chỉ thấy 4 ký tự cuối, và không có trong file sao lưu.
+**Viết bài bằng AI** cần **Anthropic API key**: tạo tại [console.anthropic.com](https://console.anthropic.com), rồi nhập trong **Cài đặt → AI & Đăng bài**. Bạn cũng có thể đặt biến môi trường `ANTHROPIC_API_KEY` thay vì nhập ở đây.
 
-1. **Anthropic API key** để Claude viết bài: tạo tại [console.anthropic.com](https://console.anthropic.com). Bạn cũng có thể đặt biến môi trường `ANTHROPIC_API_KEY` thay vì nhập ở đây.
-2. **Threads access token** để đăng bài qua [Threads API chính thức](https://developers.facebook.com/docs/threads):
+**Đăng bài** có 2 cách. Chọn trong **Cài đặt → AI & Đăng bài → Cách đăng bài**; để *Tự động* thì có token sẽ dùng API, không có token thì dùng phiên đăng nhập.
+
+1. **Phiên đăng nhập (trình duyệt):** đây là cách dễ nhất. Nếu bạn đã **Đăng nhập Threads** trong Cài đặt để cào bài, app đăng được luôn bằng chính phiên đó, không cần token.
+   - App mở [web intent chính thức](https://developers.facebook.com/docs/threads/threads-web-intents) `threads.com/intent/post` rồi bấm *Đăng* như bạn tự làm.
+   - Chuỗi thread đăng từng phần, mỗi phần trả lời phần trước.
+   - Nếu lỗi, app lưu ảnh chụp màn hình vào `data/debug/` để bạn dễ báo lại.
+   - Đây là tự động hóa giao diện web, nên có thể hỏng khi Threads đổi giao diện. Đăng vừa phải để tránh bị Threads nghi ngờ.
+2. **Threads API (token):** ổn định nhất, nhưng phải tạo app trên [Threads API chính thức](https://developers.facebook.com/docs/threads):
    - Tạo app trên developers.facebook.com, chọn *Truy cập Threads API*.
    - Bật quyền `threads_basic`, `threads_content_publish`, và `threads_manage_replies` (quyền này cần để đăng chuỗi thread).
    - Thêm tài khoản của bạn làm *Threads Tester*.
    - Tạo token, rồi đổi sang token dài hạn (60 ngày).
 
    Bấm **Kiểm tra kết nối** để xem token đã dùng được chưa và hạn mức còn lại (250 bài / 24 giờ).
+
+Khóa Anthropic và token Threads chỉ lưu trên máy bạn, giao diện chỉ thấy 4 ký tự cuối, và không có trong file sao lưu.
 
 **Chế độ Tự động chọn mô hình như sau:**
 - Ý tưởng ngắn, cần bài ngắn: **Haiku 5.5**, nhanh và rẻ.
@@ -100,6 +108,7 @@ src/xlsx.js        Ghi file Excel .xlsx không cần thư viện ngoài
 src/ai.js          Viết bài bằng Claude, chọn mô hình theo nội dung
 src/threads-api.js Đăng bài / chuỗi thread qua Threads API, đếm ký tự kiểu Threads
 src/outbox.js      Hàng đợi đăng bài, hẹn giờ, thử lại
+src/browser-poster.js Đăng bài bằng phiên đăng nhập qua web intent của Threads
 src/auth.js        Mật khẩu app (cookie ký HMAC, giới hạn số lần thử)
 src/store.js       Lưu trữ bằng file JSON (ghi nguyên tử)
 src/query.js       Lọc, sắp xếp, xuất CSV/JSON/Excel

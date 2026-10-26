@@ -701,3 +701,5 @@ details.adv[open] summary .ic { transform: rotate(90deg); }
   .model-grid { grid-template-columns: 1fr 1fr; }
   .tabbar button { font-size: 9.5px; }
 }
+.block.flash { animation: flash 1.6s ease; }
+@keyframes flash { 0%, 60% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--lemon) 55%, transparent); } 100% { box-shadow: var(--shadow); } }

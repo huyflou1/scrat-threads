@@ -21,6 +21,7 @@ const DEFAULT_SETTINGS = {
   includeReplies: true,
   anthropicApiKey: '',
   threadsToken: '',
+  postMethod: 'auto',
 };
 
 const SECRET_KEYS = ['anthropicApiKey', 'threadsToken'];
@@ -216,6 +217,7 @@ class Store {
         const v = String(patch[k] ?? '');
         // Giao diện chỉ nhận bản che (••••abcd) của khóa bí mật; gửi lại bản che nghĩa là giữ nguyên
         if (SECRET_KEYS.includes(k) && v.startsWith(MASK)) continue;
+        if (k === 'postMethod' && !['auto', 'api', 'browser'].includes(v)) continue;
         s[k] = v.trim();
       }
     }

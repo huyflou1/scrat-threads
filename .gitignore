@@ -4,3 +4,4 @@ data/*.tmp
 !data/.gitkeep
 .DS_Store
 *.log
+data/debug/

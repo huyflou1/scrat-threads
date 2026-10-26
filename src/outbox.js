@@ -7,14 +7,17 @@
 
 const crypto = require('crypto');
 const threads = require('./threads-api');
+const { pickMethod } = require('./browser-poster');
 
 const MAX_ATTEMPTS = 3;
 const STATUSES = ['draft', 'scheduled', 'publishing', 'published', 'failed'];
 
 class Outbox {
-  constructor(store, { api = threads, onChange = () => {}, onNotify = () => {} } = {}) {
+  constructor(store, { api = threads, browser = null, onChange = () => {}, onNotify = () => {} } = {}) {
     this.store = store;
     this.api = api;
+    // browser(settings, opts): đăng bằng trình duyệt với phiên đăng nhập (src/browser-poster.js)
+    this.browser = browser;
     this.onChange = onChange;
     this.onNotify = onNotify;
     if (!Array.isArray(store.data.outbox)) store.data.outbox = [];
@@ -118,18 +121,32 @@ class Outbox {
   }
 
   async publish(post) {
-    const token = this.store.getSettings().threadsToken;
+    const settings = this.store.getSettings();
     post.status = 'publishing';
     post.error = null;
     post.attempts++;
     this.save(post);
     try {
-      const { ids, permalink } = await this.api.publish(token, {
+      const method = pickMethod(settings);
+      if (!method || (method === 'browser' && !this.browser)) {
+        throw new threads.ThreadsError(settings.postMethod === 'api'
+          ? 'Chưa có Threads access token — thêm trong Cài đặt → AI & Đăng bài'
+          : 'Chưa có cách đăng bài: đăng nhập Threads trong Cài đặt (hoặc nhập Threads access token)');
+      }
+      // Đổi cách đăng giữa chừng thì mã bài cũ không dùng chung được
+      if (post.method && post.method !== method && post.media_ids.length) {
+        throw new threads.ThreadsError('Bài đã đăng dở bằng cách khác — kiểm tra trên Threads rồi tạo bài mới cho phần còn lại');
+      }
+      post.method = method;
+      const opts = {
         parts: post.parts,
         imageUrl: post.image_url,
         done: post.media_ids,
         onPart: (got) => { post.media_ids = got; this.save(post); },
-      });
+      };
+      const { ids, permalink } = method === 'browser'
+        ? await this.browser(settings, opts)
+        : await this.api.publish(settings.threadsToken, opts);
       post.media_ids = ids;
       post.permalink = permalink;
       post.status = 'published';

@@ -7,7 +7,8 @@
 
 const { harvest, safeParse } = require('./extract');
 
-const BASE = 'https://www.threads.com';
+// Cho phép trỏ sang trang giả lập khi chạy test
+const BASE = process.env.THREADS_WEB_BASE || 'https://www.threads.com';
 const DEFAULT_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36';
 

@@ -6,6 +6,7 @@ const { Store, publicSettings } = require('./src/store');
 const ai = require('./src/ai');
 const threadsApi = require('./src/threads-api');
 const { Outbox } = require('./src/outbox');
+const { publishViaBrowser, pickMethod } = require('./src/browser-poster');
 const { Scraper } = require('./src/scraper');
 const { JobManager, publicJob } = require('./src/jobs');
 const { filterPosts, filterProfiles, toCSV, toJSON, toXLSXFile, engagement } = require('./src/query');
@@ -24,6 +25,7 @@ const scraper = new Scraper();
 const jobs = new JobManager(store, scraper);
 const scheduler = new Scheduler(store, jobs);
 const outbox = new Outbox(store, {
+  browser: (settings, opts) => publishViaBrowser(scraper, settings, opts),
   onChange: (p) => broadcast('outbox', p),
   onNotify: (n) => broadcast('notify', store.addNotification(n)),
 });
@@ -248,6 +250,8 @@ app.post('/api/schedules/:id/run', wrap((req, res) => {
 app.get('/api/ai/models', wrap(() => ({
   models: ai.MODELS.map(({ id, label, tag }) => ({ id, label, tag })),
   hasKey: !!(store.getSettings().anthropicApiKey || process.env.ANTHROPIC_API_KEY),
+  hasThreadsToken: !!store.getSettings().threadsToken,
+  postVia: pickMethod(store.getSettings()),
   limit: ai.LIMIT,
 })));
 
