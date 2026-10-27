@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Khởi chạy Scrat Thread by HuyFlou: tự cài thư viện lần đầu rồi mở trình duyệt.
+cd "$(dirname "$0")" || exit 1
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "❌ Chưa có Node.js. Tải bản LTS tại https://nodejs.org rồi chạy lại."
+  read -r -p "Nhấn Enter để đóng…" _; exit 1
+fi
+if ! node -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>22||(a===22&&b>=13)?0:1)'; then
+  echo "❌ Cần Node.js 22.13 trở lên (máy đang có $(node -v))."
+  read -r -p "Nhấn Enter để đóng…" _; exit 1
+fi
+
+if [ ! -f node_modules/.scrat-ready ]; then
+  echo "🌰 Lần đầu chạy: đang cài thư viện và trình duyệt Chromium (vài phút)…"
+  npm install && npx playwright install chromium && touch node_modules/.scrat-ready || {
+    echo "❌ Cài đặt thất bại — kiểm tra kết nối mạng rồi chạy lại."
+    read -r -p "Nhấn Enter để đóng…" _; exit 1
+  }
+elif ! node scripts/check-deps.js; then
+  # Bản mới có thể thêm thư viện — cài phần còn thiếu
+  echo "🌰 Đang cài thêm thư viện cho bản mới…"
+  npm install || {
+    echo "❌ Cài đặt thất bại — kiểm tra kết nối mạng rồi chạy lại."
+    read -r -p "Nhấn Enter để đóng…" _; exit 1
+  }
+fi
+
+OPEN_BROWSER=1 node server.js

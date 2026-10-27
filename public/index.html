@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Scrat Thread by HuyFlou</title>
+  <meta name="theme-color" content="#7c5cff" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌰</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap&subset=vietnamese" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <script>
+    // Áp giao diện trước khi vẽ để tránh nháy màu
+    try { const t = localStorage.getItem('st-theme'); if (t && t !== 'auto') document.documentElement.dataset.theme = t; } catch {}
+  </script>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" aria-label="Điều hướng chính">
+      <a class="brand" href="#/">
+        <svg class="mascot" aria-hidden="true"><use href="#i-acorn" /></svg>
+        <div><b>Scrat Thread</b><small>by <span class="by">HuyFlou</span></small></div>
+      </a>
+      <nav id="nav"></nav>
+      <div class="sidebar-foot">
+        <div class="tip-card">Mẹo: nhấn <kbd>Ctrl</kbd> <kbd>K</kbd> để mở bảng lệnh nhanh, dán link hoặc @tên là cào ngay.</div>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar" id="topbar">
+        <div>
+          <h1 id="page-title">Tổng quan</h1>
+          <div class="sub" id="page-sub"></div>
+        </div>
+        <div class="spacer"></div>
+        <button class="live-pill" id="live-pill" title="Xem tác vụ đang chạy"><i></i><span></span></button>
+        <div class="pop-wrap">
+          <button class="btn icon ghost bell" id="bell-btn" aria-label="Thông báo" aria-haspopup="true" aria-expanded="false">
+            <svg class="ic"><use href="#i-bell" /></svg><span class="bell-count" id="bell-count"></span>
+          </button>
+          <div class="pop notif-pop" id="notif-pop" role="dialog" aria-label="Thông báo"></div>
+        </div>
+        <button class="cmd-btn" id="cmd-btn" aria-label="Mở bảng lệnh">
+          <svg class="ic"><use href="#i-search" /></svg><span>Tìm lệnh, dán link…</span><kbd>Ctrl K</kbd>
+        </button>
+        <button class="btn icon ghost" id="theme-btn" aria-label="Đổi giao diện sáng/tối"></button>
+      </header>
+      <main class="view" id="view" tabindex="-1"></main>
+    </div>
+  </div>
+
+  <nav class="tabbar" id="tabbar" aria-label="Điều hướng"></nav>
+
+  <div class="overlay" id="overlay"></div>
+  <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title"></aside>
+  <div class="modal" id="modal" role="alertdialog" aria-modal="true"></div>
+  <div class="palette" id="palette" role="dialog" aria-modal="true" aria-label="Bảng lệnh">
+    <div class="palette-in">
+      <svg class="ic"><use href="#i-command" /></svg>
+      <input id="palette-input" placeholder="Gõ lệnh, @tên, link bài viết hoặc từ khóa…" autocomplete="off" />
+      <kbd>Esc</kbd>
+    </div>
+    <div class="palette-list" id="palette-list"></div>
+  </div>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <script src="icons.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

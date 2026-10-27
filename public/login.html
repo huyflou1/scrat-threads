@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Đăng nhập · Scrat Thread by HuyFlou</title>
+  <meta name="theme-color" content="#7c5cff" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌰</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap&subset=vietnamese" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <script>
+    try { const t = localStorage.getItem('st-theme'); if (t && t !== 'auto') document.documentElement.dataset.theme = t; } catch {}
+  </script>
+  <style>
+    body { min-height: 100vh; display: grid; place-items: center; padding: 16px;
+      background: radial-gradient(80% 60% at 100% 0%, var(--pink-bg) 0, transparent 60%), radial-gradient(80% 60% at 0% 100%, var(--sky-bg) 0, transparent 60%), var(--bg); }
+    .login { width: min(400px, 100%); text-align: center; padding: 32px 28px; }
+    .login .mascot { width: 96px; height: 96px; margin: 0 auto 8px; display: block; animation: bob 4s ease-in-out infinite; }
+    .login h1 { margin: 0; font-size: 24px; font-weight: 900; letter-spacing: -.02em; }
+    .login .byline { font-size: 13px; font-weight: 750; color: var(--muted); margin-top: 2px; }
+    .login .byline b { color: var(--grape); font-weight: 900; }
+    .login p { margin: 10px 0 22px; color: var(--muted); font-weight: 650; }
+    .login form { display: flex; flex-direction: column; gap: 12px; text-align: left; }
+    .login .err { min-height: 20px; color: var(--danger); font-size: 13px; font-weight: 800; }
+    .login.shake { animation: shake .4s; }
+    .eye { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); }
+    @keyframes shake { 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
+  </style>
+</head>
+<body>
+  <main class="block login" id="card">
+    <svg class="mascot" aria-hidden="true"><use href="#i-acorn" /></svg>
+    <h1>Scrat Thread</h1>
+    <div class="byline">by <b>HuyFlou</b></div>
+    <p>Nhập mật khẩu để vào kho hạt dẻ nhé 🌰</p>
+    <form id="form">
+      <label class="label" for="pw">Mật khẩu</label>
+      <div class="input-ic">
+        <svg class="ic"><use href="#i-shield" /></svg>
+        <input class="input" id="pw" type="password" autocomplete="current-password" required autofocus style="padding-right:46px" />
+        <button class="btn icon ghost sm eye" type="button" id="eye" aria-label="Hiện mật khẩu"><svg class="ic sm"><use href="#i-eye" /></svg></button>
+      </div>
+      <div class="err" id="err" role="alert"></div>
+      <button class="btn primary lg" type="submit" id="go"><svg class="ic"><use href="#i-check" /></svg>Vào app</button>
+    </form>
+  </main>
+  <script src="icons.js"></script>
+  <script>
+    const $ = (s) => document.querySelector(s);
+    // Trình duyệt giữ nguyên #trang khi máy chủ chuyển hướng tới đây
+    const next = () => {
+      let h = location.hash;
+      try { h = h || sessionStorage.getItem('st-next') || ''; sessionStorage.removeItem('st-next'); } catch {}
+      location.replace('/' + h);
+    };
+    fetch('/api/auth').then((r) => r.json()).then((a) => { if (!a.enabled || a.authed) next(); });
+    $('#eye').onclick = () => { const i = $('#pw'); i.type = i.type === 'password' ? 'text' : 'password'; i.focus(); };
+    $('#form').onsubmit = async (e) => {
+      e.preventDefault();
+      $('#go').disabled = true;
+      $('#err').textContent = '';
+      try {
+        const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: $('#pw').value }) });
+        const d = await r.json().catch(() => ({}));
+        if (r.ok) return next();
+        $('#err').textContent = d.error || 'Không đăng nhập được';
+        const c = $('#card');
+        c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake');
+        $('#pw').select();
+      } catch {
+        $('#err').textContent = 'Không kết nối được máy chủ';
+      } finally {
+        $('#go').disabled = false;
+      }
+    };
+  </script>
+</body>
+</html>

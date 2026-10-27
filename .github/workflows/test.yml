@@ -1,0 +1,27 @@
+name: Kiểm thử
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - name: Cài Chromium cho test đăng bài bằng trình duyệt
+        run: npx playwright install --with-deps chromium
+      - name: Kiểm tra cú pháp
+        run: for f in server.js src/*.js src/routes/*.js public/*.js public/js/*.js public/js/pages/*.js scripts/*.js; do node --check "$f"; done
+      - run: npm test
