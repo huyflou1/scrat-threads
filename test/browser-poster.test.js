@@ -9,6 +9,12 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const http = require('http');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+// Ảnh chụp màn hình khi lỗi ghi vào thư mục tạm, không làm bẩn data/ của repo
+process.env.DEBUG_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'scrat-debug-'));
 
 async function fakeThreads({ mode = 'ok' } = {}) {
   const posted = [];

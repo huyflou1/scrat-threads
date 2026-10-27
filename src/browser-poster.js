@@ -13,8 +13,9 @@ const path = require('path');
 const { parseCookies, BASE } = require('./scraper');
 const { harvest, safeParse } = require('./extract');
 const { ThreadsError } = require('./threads-api');
+const { safeFetch } = require('./safe-fetch');
 
-const DEBUG_DIR = path.join(path.dirname(process.env.DATA_FILE || path.join(__dirname, '..', 'data', 'db.json')), 'debug');
+const DEBUG_DIR = process.env.DEBUG_DIR || path.join(path.dirname(process.env.DATA_FILE || path.join(__dirname, '..', 'data', 'db.json')), 'debug');
 const DEFAULT_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36';
 
@@ -39,15 +40,20 @@ function pickMethod(settings) {
   return api ? 'api' : browser ? 'browser' : null;
 }
 
-/** Tải ảnh về file tạm để gắn vào khung soạn bài. */
+/** Tải ảnh về file tạm để gắn vào khung soạn bài (tối đa 10 MB, giới hạn của Threads là 8 MB). */
 async function downloadImage(url) {
-  const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(30000) });
-  const type = res.headers.get('content-type') || '';
-  if (!res.ok || !/^image\//.test(type)) throw new ThreadsError(`Không tải được ảnh từ link (${res.status})`);
-  const ext = type.includes('png') ? '.png' : type.includes('webp') ? '.webp' : '.jpg';
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'scrat-img-')), 'image' + ext);
-  fs.writeFileSync(file, Buffer.from(await res.arrayBuffer()));
-  return file;
+  let got;
+  try {
+    got = await safeFetch(url, { maxBytes: 10 * 1024 * 1024 });
+    if (!got.res.ok || !/^image\//.test(got.type)) throw new Error(`máy chủ trả mã ${got.res.status} ${got.type}`.trim());
+    const buf = await got.read();
+    const ext = got.type.includes('png') ? '.png' : got.type.includes('webp') ? '.webp' : '.jpg';
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'scrat-img-')), 'image' + ext);
+    fs.writeFileSync(file, buf);
+    return file;
+  } catch (e) {
+    throw new ThreadsError(`Không tải được ảnh từ link: ${e.message}`);
+  }
 }
 
 /**
@@ -162,6 +168,7 @@ async function publishViaBrowser(scraper, settings, { parts, imageUrl, done = []
     throw new ThreadsError(`Không đăng được bằng trình duyệt: ${String(e.message).split('\n')[0]} (ảnh chụp màn hình: ${shot})`, { transient: !e.clicked });
   } finally {
     await context.close().catch(() => {});
+    if (image) fs.rmSync(path.dirname(image), { recursive: true, force: true });
   }
 }
 

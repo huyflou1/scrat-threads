@@ -58,7 +58,7 @@ test('sao lưu bỏ cookie; khôi phục gộp, bỏ bản ghi lỗi, tắt lị
   backup.posts.push({ id: '2', code: 'B', username: 'có dấu cách' }, { id: 3 }, null);
   backup.posts[0].like_count = 'không phải số';
   const r = b.importAll(backup);
-  assert.deepEqual(r, { posts: 1, profiles: 1, schedules: 1, skipped: 3 });
+  assert.deepEqual(r, { posts: 1, profiles: 1, schedules: 1, outbox: 0, notifications: 0, jobs: 0, settings: true, skipped: 3 });
   assert.equal(b.data.posts['1'].text, 'xin chào');
   assert.equal(b.data.posts['1'].like_count, 0, 'ép kiểu số');
   assert.equal(b.data.profiles.zuck.history.length, 2, 'gộp lịch sử theo dõi');
@@ -66,4 +66,58 @@ test('sao lưu bỏ cookie; khôi phục gộp, bỏ bản ghi lỗi, tắt lị
   assert.equal(b.importAll(backup).schedules, 0, 'không nhập trùng lịch');
   assert.throws(() => b.importAll({ foo: 1 }), /không phải bản sao lưu/);
   clearTimeout(a.timer); clearTimeout(b.timer);
+});
+
+test('sao lưu kèm hàng đợi đăng, thông báo và cài đặt; bài hẹn giờ nhập vào thành nháp', () => {
+  const a = new Store(tmp());
+  a.updateSettings({ maxScrolls: 77, postMethod: 'browser', threadsToken: 'THAA-bi-mat', anthropicApiKey: 'sk-bi-mat' });
+  a.data.outbox.push(
+    { id: 'o1', parts: ['đã hẹn'], status: 'scheduled', scheduled_at: '2030-01-01T00:00:00Z', media_ids: [], created_at: '2026-01-02' },
+    { id: 'o2', parts: ['đã đăng'], status: 'published', media_ids: ['1'], permalink: 'x', created_at: '2026-01-01' },
+    { id: 'o3', parts: [], status: 'draft' },
+  );
+  a.addNotification({ kind: 'posted', title: 'Đã đăng' });
+  const backup = JSON.parse(JSON.stringify(a.exportAll()));
+  assert.equal(/bi-mat/.test(JSON.stringify(backup)), false, 'không lộ khóa bí mật');
+
+  const b = new Store(tmp());
+  b.updateSettings({ threadsToken: 'THAA-cua-b' });
+  const r = b.importAll(backup);
+  assert.equal(r.outbox, 2);
+  assert.equal(r.notifications, 1);
+  assert.equal(b.getSettings().maxScrolls, 77, 'áp dụng cài đặt');
+  assert.equal(b.getSettings().postMethod, 'browser');
+  assert.equal(b.getSettings().threadsToken, 'THAA-cua-b', 'giữ khóa bí mật của máy hiện tại');
+  const o1 = b.data.outbox.find((x) => x.id === 'o1');
+  assert.equal(o1.status, 'draft', 'không tự đăng ngay sau khi khôi phục');
+  assert.equal(o1.scheduled_at, null);
+  assert.equal(b.data.outbox.find((x) => x.id === 'o2').status, 'published');
+  assert.equal(b.importAll(backup).outbox, 0, 'không nhập trùng');
+  clearTimeout(a.timer); clearTimeout(b.timer);
+});
+
+test('xóa theo phạm vi, giữ cài đặt và bài đang đăng', () => {
+  const s = new Store(tmp());
+  s.updateSettings({ cookies: 'sessionid=1' });
+  s.upsertPosts([{ id: '1', code: 'A', username: 'zuck' }]);
+  s.data.schedules.push({ id: 's1' });
+  s.data.outbox.push({ id: 'o1', status: 'draft' }, { id: 'o2', status: 'publishing' });
+  s.addNotification({ title: 'x' });
+  assert.deepEqual(s.clearAll(), { posts: 1, profiles: 0, jobs: 0 }, 'mặc định chỉ xóa kho và lịch sử tác vụ');
+  assert.equal(s.data.schedules.length, 1);
+  assert.deepEqual(s.clearAll(['schedules', 'outbox', 'notifications']), { schedules: 1, outbox: 1, notifications: 1 });
+  assert.deepEqual(s.data.outbox.map((x) => x.id), ['o2']);
+  assert.equal(s.getSettings().cookies, 'sessionid=1');
+  clearTimeout(s.timer);
+});
+
+test('file dữ liệu hỏng được giữ lại, không bị ghi đè', () => {
+  const file = tmp();
+  fs.writeFileSync(file, '{"posts": {hỏng');
+  const s = new Store(file);
+  assert.ok(s.recovered && fs.readFileSync(s.recovered, 'utf8').includes('hỏng'));
+  s.upsertPosts([{ id: '1', code: 'A', username: 'zuck' }]);
+  s.flush();
+  assert.ok(fs.readFileSync(s.recovered, 'utf8').includes('hỏng'), 'bản hỏng vẫn còn sau khi ghi');
+  assert.equal(new Store(file).recovered, undefined);
 });

@@ -25,6 +25,8 @@ const DEFAULT_SETTINGS = {
 };
 
 const SECRET_KEYS = ['anthropicApiKey', 'threadsToken'];
+// Không đưa vào file sao lưu, không ghi đè khi khôi phục
+const NO_BACKUP = ['cookies', ...SECRET_KEYS];
 const MASK = '••••';
 
 /** Cài đặt gửi cho giao diện: che khóa bí mật, chỉ để lộ 4 ký tự cuối. */
@@ -63,7 +65,17 @@ class Store {
         }
       }
     } catch (e) {
-      if (e.code !== 'ENOENT') console.warn('[store] không đọc được dữ liệu, tạo mới:', e.message);
+      if (e.code === 'ENOENT') return;
+      // File hỏng: đổi tên để giữ lại thay vì để lần ghi sau đè mất
+      const bad = `${this.file}.corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+      try {
+        fs.renameSync(this.file, bad);
+        this.recovered = bad;
+        console.warn(`[store] file dữ liệu bị hỏng (${e.message}) — đã giữ lại tại ${bad}, bắt đầu với kho trống`);
+      } catch (e2) {
+        // Không đổi tên được thì dừng hẳn, tuyệt đối không ghi đè
+        throw new Error(`Không đọc được ${this.file} (${e.message}) và không sao lưu được file hỏng: ${e2.message}`);
+      }
     }
   }
 
@@ -228,30 +240,38 @@ class Store {
   }
 
   /* ---------- Sao lưu / khôi phục ---------- */
-  /** Toàn bộ dữ liệu, KHÔNG kèm cookie đăng nhập (dữ liệu nhạy cảm). */
+  /**
+   * Toàn bộ dữ liệu: bài viết, hồ sơ, lịch, hàng đợi đăng, thông báo, lịch sử tác vụ, cài đặt.
+   * KHÔNG kèm cookie đăng nhập và khóa bí mật (dữ liệu nhạy cảm).
+   */
   exportAll() {
     const settings = { ...this.data.settings };
-    for (const k of ['cookies', ...SECRET_KEYS]) delete settings[k];
+    for (const k of NO_BACKUP) delete settings[k];
     return {
       app: 'scrat-threads',
-      version: 1,
+      version: 2,
       exported_at: new Date().toISOString(),
       posts: Object.values(this.data.posts),
       profiles: Object.values(this.data.profiles),
       schedules: this.data.schedules,
+      outbox: this.data.outbox,
+      notifications: this.data.notifications,
+      jobs: this.data.jobs.filter((j) => j.status !== 'running' && j.status !== 'queued'),
       settings,
     };
   }
 
   /**
    * Gộp bản sao lưu vào dữ liệu hiện có (không xóa gì). Bản ghi không hợp lệ bị bỏ qua.
-   * Lịch nhập vào được TẮT sẵn để không chạy dồn ngay sau khi khôi phục.
+   * Lịch nhập vào được TẮT sẵn, bài hẹn giờ chưa đăng thành NHÁP — để không tự chạy/đăng
+   * ngay sau khi khôi phục. Cài đặt (trừ cookie và khóa bí mật) được áp dụng.
    */
   importAll(raw) {
     if (!raw || raw.app !== 'scrat-threads' || !Array.isArray(raw.posts)) {
       throw new Error('File không phải bản sao lưu của Scrat Thread by HuyFlou');
     }
     const str = (v) => typeof v === 'string';
+    const arr = (v) => (Array.isArray(v) ? v : []);
     const USER = /^[A-Za-z0-9._]{1,30}$/;
     const NUMS = ['like_count', 'reply_count', 'repost_count', 'quote_count', 'reshare_count', 'follower_count'];
     const clean = (o) => {
@@ -259,7 +279,7 @@ class Store {
       for (const k of ['media', 'hashtags', 'mentions', 'sources', 'links', 'history']) if (k in o && !Array.isArray(o[k])) o[k] = [];
       return o;
     };
-    const out = { posts: 0, profiles: 0, schedules: 0, skipped: 0 };
+    const out = { posts: 0, profiles: 0, schedules: 0, outbox: 0, notifications: 0, jobs: 0, settings: false, skipped: 0 };
 
     for (const p of raw.posts) {
       if (!p || !str(p.id) || !str(p.code) || !str(p.username) || !USER.test(p.username)) { out.skipped++; continue; }
@@ -269,35 +289,103 @@ class Store {
       this.data.posts[p.id] = clean({ ...prev, ...p });
       out.posts++;
     }
-    for (const u of Array.isArray(raw.profiles) ? raw.profiles : []) {
+    for (const u of arr(raw.profiles)) {
       if (!u || !str(u.username) || !USER.test(u.username)) { out.skipped++; continue; }
       const prev = this.data.profiles[u.username];
       const keepPrev = prev && prev.scraped_at && u.scraped_at && prev.scraped_at > u.scraped_at;
       // Gộp lịch sử người theo dõi của cả hai bên (kể cả khi giữ bản hiện có)
-      const history = [...((prev && prev.history) || []), ...(Array.isArray(u.history) ? u.history : [])]
+      const history = [...((prev && prev.history) || []), ...arr(u.history)]
         .filter((h) => h && str(h.t) && Number.isFinite(Number(h.f)))
         .sort((a, b) => a.t.localeCompare(b.t))
-        .filter((h, i, arr) => i === 0 || h.t !== arr[i - 1].t)
+        .filter((h, i, all) => i === 0 || h.t !== all[i - 1].t)
         .slice(-60);
       this.data.profiles[u.username] = clean(keepPrev ? { ...u, ...prev, history } : { ...prev, ...u, history });
       out.profiles++;
     }
     const have = new Set(this.data.schedules.map((x) => x.id));
-    for (const x of Array.isArray(raw.schedules) ? raw.schedules : []) {
+    for (const x of arr(raw.schedules)) {
       if (!x || !str(x.id) || have.has(x.id) || !str(x.type) || !x.raw || !(Number(x.every) >= 15)) continue;
       this.data.schedules.push({ ...x, every: Number(x.every), enabled: false, last_job_id: null });
       out.schedules++;
+    }
+
+    const haveOut = new Set(this.data.outbox.map((x) => x.id));
+    for (const x of arr(raw.outbox)) {
+      const parts = arr(x && x.parts).filter(str);
+      if (!x || !str(x.id) || haveOut.has(x.id) || !parts.length) { if (x && !haveOut.has(x.id)) out.skipped++; continue; }
+      const item = { ...x, parts, media_ids: arr(x.media_ids), attempts: 0 };
+      if (item.status !== 'published') {
+        // Đăng dở thì để Lỗi cho người dùng kiểm tra; còn lại thành nháp
+        item.status = item.media_ids.length ? 'failed' : 'draft';
+        item.scheduled_at = null;
+      }
+      this.data.outbox.push(item);
+      out.outbox++;
+    }
+    this.data.outbox.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+
+    const haveN = new Set(this.data.notifications.map((n) => n.id));
+    for (const n of arr(raw.notifications)) {
+      if (!n || !str(n.id) || haveN.has(n.id) || !str(n.title)) continue;
+      this.data.notifications.push(n);
+      out.notifications++;
+    }
+    this.data.notifications = this.data.notifications.sort((a, b) => String(b.t).localeCompare(String(a.t))).slice(0, 100);
+
+    const haveJ = new Set(this.data.jobs.map((j) => j.id));
+    for (const j of arr(raw.jobs)) {
+      if (!j || !str(j.id) || haveJ.has(j.id) || !str(j.type) || j.status === 'running' || j.status === 'queued') continue;
+      this.data.jobs.push(j);
+      out.jobs++;
+    }
+    this.data.jobs = this.data.jobs.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))).slice(0, 300);
+
+    if (raw.settings && typeof raw.settings === 'object') {
+      const patch = { ...raw.settings };
+      for (const k of NO_BACKUP) delete patch[k];
+      this.updateSettings(patch);
+      out.settings = true;
     }
     this.save();
     return out;
   }
 
-  clearAll() {
-    this.data.posts = {};
-    this.data.profiles = {};
-    this.data.jobs = this.data.jobs.filter((j) => j.status === 'running' || j.status === 'queued');
+  /**
+   * Xóa theo phạm vi: library (bài viết + hồ sơ), jobs (lịch sử tác vụ đã xong),
+   * schedules, outbox (trừ bài đang đăng), notifications. Cài đặt không bao giờ bị xóa ở đây.
+   */
+  clearAll(scopes = ['library', 'jobs']) {
+    const out = {};
+    const want = new Set(scopes);
+    if (want.has('library')) {
+      out.posts = Object.keys(this.data.posts).length;
+      out.profiles = Object.keys(this.data.profiles).length;
+      this.data.posts = {};
+      this.data.profiles = {};
+    }
+    if (want.has('jobs')) {
+      const before = this.data.jobs.length;
+      this.data.jobs = this.data.jobs.filter((j) => j.status === 'running' || j.status === 'queued');
+      out.jobs = before - this.data.jobs.length;
+    }
+    if (want.has('schedules')) {
+      out.schedules = this.data.schedules.length;
+      this.data.schedules.length = 0;
+    }
+    if (want.has('outbox')) {
+      const before = this.data.outbox.length;
+      this.data.outbox = this.data.outbox.filter((p) => p.status === 'publishing');
+      out.outbox = before - this.data.outbox.length;
+    }
+    if (want.has('notifications')) {
+      out.notifications = this.data.notifications.length;
+      this.data.notifications = [];
+    }
     this.save();
+    return out;
   }
 }
 
-module.exports = { Store, DEFAULT_SETTINGS, publicSettings, SECRET_KEYS };
+const CLEAR_SCOPES = ['library', 'jobs', 'schedules', 'outbox', 'notifications'];
+
+module.exports = { Store, DEFAULT_SETTINGS, publicSettings, SECRET_KEYS, CLEAR_SCOPES };

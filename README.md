@@ -11,7 +11,7 @@
 | **Đăng bài** | Nhập ý tưởng → Claude viết **3 phương án** (chọn giọng văn, độ dài, bài đơn hoặc chuỗi thread, ngôn ngữ, hashtag/emoji, học giọng văn từ một tài khoản trong kho). Chọn mô hình **Opus 5.5 / Sonnet 5.5 / Haiku 5.5** hoặc **Tự động** theo nội dung. Sửa bản đăng với bộ đếm 500 ký tự (emoji tính theo byte như Threads), thêm ảnh, **đăng ngay** hoặc **hẹn giờ** (có gợi ý *giờ vàng* từ bản đồ giờ đăng). Tab **Hàng đợi đăng**: nháp, đã hẹn, đã đăng, lỗi; tự thử lại khi lỗi tạm thời |
 | **Tác vụ** | Tab **Hàng đợi**: chạy song song có giới hạn, tiến độ và nhật ký cập nhật trực tiếp (SSE), dừng / chạy lại. Tab **Lịch tự động**: cào lại định kỳ (mỗi giờ, 6 giờ, hằng ngày, hằng tuần), bật/tắt, đổi chu kỳ, chạy ngay |
 | **Kho dữ liệu** | Bài viết và hồ sơ; ngăn chi tiết hồ sơ có biểu đồ người theo dõi theo thời gian, lượt thích trung bình, tỉ lệ tương tác, bài nổi bật và nút *Theo dõi hằng ngày*; tìm kiếm không dấu, lọc theo tác giả / media / lượt thích / ngày, dạng thẻ hoặc bảng, chọn nhiều để xuất, xóa hoặc **cào trả lời hàng loạt** cho các bài đã chọn, menu **Xuất file**: **Excel (.xlsx)** có dòng tiêu đề cố định và bộ lọc, **CSV** (UTF-8 BOM), **JSON** |
-| **Cài đặt** | **Đăng nhập bằng cửa sổ trình duyệt** (tự lấy cookie) hoặc dán cookie thủ công, chạy ẩn trình duyệt, độ trễ, số lần cuộn, proxy, User-Agent, giao diện, dữ liệu mẫu, **sao lưu / khôi phục toàn bộ** (gộp, không xóa dữ liệu hiện có; không kèm cookie) |
+| **Cài đặt** | **Đăng nhập bằng cửa sổ trình duyệt** (tự lấy cookie) hoặc dán cookie thủ công, chạy ẩn trình duyệt, độ trễ, số lần cuộn, proxy, User-Agent, giao diện, dữ liệu mẫu, **sao lưu / khôi phục toàn bộ**: kho, lịch, hàng đợi đăng, thông báo, lịch sử tác vụ và cài đặt (gộp, không xóa dữ liệu hiện có; không kèm cookie và khóa bí mật), **xóa dữ liệu theo mục** |
 
 **Thông báo** (biểu tượng chuông): khi lịch tự động tìm thấy bài mới, khi bài hẹn giờ đã đăng hoặc đăng lỗi, Scrat báo trong app và — nếu bạn cho phép — báo ra máy tính khi đang ở tab khác.
 
@@ -31,11 +31,20 @@ npm run setup      # tải Chromium cho Playwright (chỉ cần chạy một l�
 npm start          # mở http://127.0.0.1:3000
 ```
 
-Biến môi trường: `PORT` (mặc định 3000), `HOST` (mặc định 127.0.0.1), `DATA_FILE` (mặc định `data/db.json`), `APP_PASSWORD` (bật mật khẩu cho app).
+Biến môi trường:
+- `PORT` (mặc định 3000), `HOST` (mặc định 127.0.0.1), `DATA_FILE` (mặc định `data/db.json`).
+- `APP_PASSWORD`: bật mật khẩu cho app.
+- `TRUST_PROXY`: đặt `1` khi chạy sau reverse proxy HTTPS, để cookie đăng nhập có cờ `Secure`.
+- `MODEL_OPUS`, `MODEL_SONNET`, `MODEL_HAIKU`: đổi ID mô hình Claude khi Anthropic ra bản mới.
+- `DEBUG_DIR`: nơi lưu ảnh chụp màn hình khi đăng bài lỗi (mặc định `data/debug/`).
 
-### Mở app cho người khác dùng qua mạng
+Nếu `data/db.json` bị hỏng (ví dụ máy tắt đột ngột), app đổi tên nó thành `db.json.corrupt-<thời gian>` rồi chạy với kho trống, không ghi đè file cũ. App cũng hiện thông báo để bạn khôi phục từ bản sao lưu.
 
-Mặc định app chỉ nghe ở `127.0.0.1`, tức chỉ máy của bạn vào được. Nếu muốn mở ra mạng nội bộ hoặc Internet, **hãy đặt mật khẩu**, vì app chứa cookie đăng nhập Threads của bạn:
+### Truy cập từ xa (cho chính bạn)
+
+App được làm cho **một người dùng**: một mật khẩu chung, ai vào được là dùng được cookie Threads và khóa API của bạn. Chỉ mở từ xa để bạn tự dùng (ví dụ từ điện thoại), đừng chia sẻ cho người khác.
+
+Mặc định app chỉ nghe ở `127.0.0.1`, tức chỉ máy của bạn vào được. Nếu muốn mở ra mạng nội bộ hoặc Internet, **bắt buộc đặt mật khẩu**:
 
 ```bash
 HOST=0.0.0.0 APP_PASSWORD='mật-khẩu-của-bạn' npm start
@@ -43,15 +52,16 @@ HOST=0.0.0.0 APP_PASSWORD='mật-khẩu-của-bạn' npm start
 
 - Người vào app sẽ phải nhập mật khẩu ở trang đăng nhập. Phiên đăng nhập kéo dài 30 ngày và vẫn còn sau khi khởi động lại app. Đổi mật khẩu thì mọi phiên cũ bị đăng xuất.
 - Mỗi IP được thử sai tối đa 8 lần trong 5 phút.
-- Khi chạy qua Internet, nên đặt app sau HTTPS (ví dụ Caddy, Nginx hoặc Cloudflare Tunnel).
+- Khi chạy qua Internet, hãy đặt app sau HTTPS (ví dụ Caddy, Nginx hoặc Cloudflare Tunnel) và thêm `TRUST_PROXY=1`.
+- Khóa API, token và cookie lưu dạng chữ thường trong `data/db.json`: giữ thư mục `data/` kín, đừng đồng bộ lên cloud công khai.
 
 ### Viết bài bằng AI & đăng lên Threads
 
-**Viết bài bằng AI** cần **Anthropic API key**: tạo tại [console.anthropic.com](https://console.anthropic.com), rồi nhập trong **Cài đặt → AI & Đăng bài**. Bạn cũng có thể đặt biến môi trường `ANTHROPIC_API_KEY` thay vì nhập ở đây.
+**Viết bài bằng AI** cần **Anthropic API key**: tạo tại [console.anthropic.com](https://console.anthropic.com), rồi nhập trong **Cài đặt → AI & Đăng bài**. Bạn cũng có thể đặt biến môi trường `ANTHROPIC_API_KEY` thay vì nhập ở đây. Bấm **Kiểm tra key & mô hình** để xem key dùng được mô hình nào (không tốn token).
 
 **Đăng bài** có 2 cách. Chọn trong **Cài đặt → AI & Đăng bài → Cách đăng bài**; để *Tự động* thì có token sẽ dùng API, không có token thì dùng phiên đăng nhập.
 
-1. **Phiên đăng nhập (trình duyệt):** đây là cách dễ nhất. Nếu bạn đã **Đăng nhập Threads** trong Cài đặt để cào bài, app đăng được luôn bằng chính phiên đó, không cần token.
+1. **Phiên đăng nhập (trình duyệt, thử nghiệm):** đây là cách dễ nhất. Nếu bạn đã **Đăng nhập Threads** trong Cài đặt để cào bài, app đăng được luôn bằng chính phiên đó, không cần token.
    - App mở [web intent chính thức](https://developers.facebook.com/docs/threads/threads-web-intents) `threads.com/intent/post` rồi bấm *Đăng* như bạn tự làm.
    - Chuỗi thread đăng từng phần, mỗi phần trả lời phần trước.
    - Nếu lỗi, app lưu ảnh chụp màn hình vào `data/debug/` để bạn dễ báo lại.
@@ -78,7 +88,7 @@ Với Opus và Sonnet, nếu bộ lọc an toàn từ chối nhầm, Anthropic t
 - Lỗi tạm thời (mạng chập chờn, bị giới hạn tốc độ) được thử lại tối đa 3 lần.
 - Nếu app tắt giữa lúc đang đăng, bài chuyển sang trạng thái *Lỗi* để bạn kiểm tra trước khi thử lại, tránh đăng trùng.
 - Chuỗi thread bị lỗi giữa chừng sẽ đăng tiếp từ phần còn thiếu.
-- Ảnh đính kèm phải là link `https` công khai, vì Threads tự tải ảnh từ link đó.
+- Ảnh đính kèm phải là link `https` công khai, vì Threads tự tải ảnh từ link đó. Khi đăng bằng trình duyệt, app tải ảnh về (tối đa 10 MB, không tải từ địa chỉ mạng nội bộ) rồi xóa file tạm sau khi đăng.
 
 Kiểm thử: `npm test`.
 
@@ -110,7 +120,8 @@ src/threads-api.js Đăng bài / chuỗi thread qua Threads API, đếm ký tự
 src/outbox.js      Hàng đợi đăng bài, hẹn giờ, thử lại
 src/browser-poster.js Đăng bài bằng phiên đăng nhập qua web intent của Threads
 src/auth.js        Mật khẩu app (cookie ký HMAC, giới hạn số lần thử)
-src/store.js       Lưu trữ bằng file JSON (ghi nguyên tử)
+src/store.js       Lưu trữ bằng file JSON (ghi nguyên tử, giữ lại file hỏng)
+src/safe-fetch.js  Tải file ngoài có giới hạn dung lượng, kiểm tra chuyển hướng và IP nội bộ
 src/query.js       Lọc, sắp xếp, xuất CSV/JSON/Excel
 public/            Giao diện (HTML/CSS/JS thuần, không cần build)
 ```

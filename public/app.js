@@ -1632,6 +1632,7 @@
               <label for="s-ak">Anthropic API key (Claude)</label>
               <input class="input" id="s-ak" type="password" autocomplete="off" data-s="anthropicApiKey" placeholder="sk-ant-…" value="${esc(s.anthropicApiKey)}" />
               <span class="hint">Tạo tại console.anthropic.com → API Keys. Để trống thì dùng biến môi trường ANTHROPIC_API_KEY.</span>
+              <div class="row" style="gap:8px"><button class="btn sm" data-act="ai-check">${ic('shield', 'sm')}Kiểm tra key & mô hình</button><span id="ai-check-out" class="row" style="gap:6px"></span></div>
             </div>
             <div class="field">
               <label for="s-tt">Threads access token <span class="muted">(không bắt buộc nếu đã đăng nhập Threads)</span></label>
@@ -1663,7 +1664,7 @@
             <button class="btn" data-act="backup">${ic('download')}Sao lưu toàn bộ</button>
             <button class="btn" data-act="restore">${ic('refresh')}Khôi phục</button>
             <input type="file" id="restore-file" accept=".json,application/json" hidden />
-            <button class="btn danger" data-act="clear-all">${ic('trash')}Xóa toàn bộ</button>
+            <button class="btn danger" data-act="clear-all">${ic('trash')}Xóa dữ liệu…</button>
           </div>
           <div class="set-row" style="margin-top:12px;border-top:1px dashed var(--line)" id="auth-row"></div>
         </section>
@@ -1959,7 +1960,7 @@
     },
     backup: () => {
       download('/api/backup');
-      toast('Đang tải bản sao lưu (không kèm cookie đăng nhập)', 'info');
+      toast('Đang tải bản sao lưu (không kèm cookie đăng nhập và khóa bí mật)', 'info');
     },
     restore: () => {
       const input = $('#restore-file');
@@ -1973,11 +1974,11 @@
         } catch {
           return toast('File JSON bị hỏng', 'err');
         }
-        if (!(await confirmBox({ title: 'Khôi phục từ bản sao lưu?', text: `Dữ liệu trong “${esc(file.name)}” sẽ được gộp vào kho hiện tại, không xóa gì. Lịch tự động nhập vào sẽ ở trạng thái tắt.`, ok: 'Khôi phục', icon: 'refresh', color: 'sky' }))) return;
+        if (!(await confirmBox({ title: 'Khôi phục từ bản sao lưu?', text: `Dữ liệu trong “${esc(file.name)}” sẽ được gộp vào kho hiện tại, không xóa gì. Cài đặt (trừ cookie và khóa bí mật) được áp dụng theo bản sao lưu. Lịch tự động nhập vào ở trạng thái tắt, bài hẹn giờ chưa đăng thành nháp.`, ok: 'Khôi phục', icon: 'refresh', color: 'sky' }))) return;
         try {
           const r = await api('/restore', { method: 'POST', body: data });
-          toast(`Đã khôi phục ${num(r.posts)} bài, ${num(r.profiles)} hồ sơ, ${num(r.schedules)} lịch${r.skipped ? ` (bỏ qua ${r.skipped} mục lỗi)` : ''}`, 'party');
-          loadSchedules();
+          toast(`Đã khôi phục ${num(r.posts)} bài, ${num(r.profiles)} hồ sơ, ${num(r.schedules)} lịch, ${num(r.outbox || 0)} bài trong hàng đợi đăng${r.skipped ? ` (bỏ qua ${r.skipped} mục lỗi)` : ''}`, 'party');
+          setTimeout(() => location.reload(), 1200);
         } catch (e) {
           toast(e.message, 'err');
         }
@@ -2057,6 +2058,18 @@
       if (!(await confirmBox({ title: 'Xóa bài này khỏi hàng đợi?', text: 'Bài đã đăng trên Threads (nếu có) vẫn giữ nguyên.', ok: 'Xóa', danger: true, icon: 'trash' }))) return;
       await api('/outbox/' + el.dataset.id, { method: 'DELETE' });
       upsertOutbox({ id: el.dataset.id, removed: true });
+    },
+    'ai-check': async () => {
+      const out = $('#ai-check-out');
+      if (S.settingsDirty) return toast('Lưu cài đặt trước rồi kiểm tra', 'info');
+      out.innerHTML = '<span class="spin"></span> Đang kiểm tra…';
+      try {
+        const r = await api('/ai/check', { method: 'POST' });
+        out.innerHTML = r.map((m) => `<span class="status ${m.ok ? 'c-mint' : 'c-pink'}" title="${esc(m.ok ? m.id : m.error)}">${esc(m.label.replace('Claude ', ''))} ${m.ok ? '✓' : '✗'}</span>`).join('')
+          + (r.every((m) => !m.ok) ? ` <span class="muted" style="font-size:12.5px;font-weight:700">${esc(r[0].error)}</span>` : '');
+      } catch (e) {
+        out.innerHTML = `<span class="status c-pink">${esc(e.message)}</span>`;
+      }
     },
     'threads-check': async () => {
       const out = $('#threads-me');
@@ -2210,10 +2223,27 @@
       if (S.route.id === 'home') renderHome();
     },
     'clear-all': async () => {
-      if (!(await confirmBox({ title: 'Xóa toàn bộ dữ liệu?', text: 'Tất cả bài viết, hồ sơ và lịch sử tác vụ sẽ bị xóa vĩnh viễn.', ok: 'Xóa hết', danger: true, icon: 'trash' }))) return;
-      await api('/clear', { method: 'POST' });
+      const opts = [
+        ['library', 'Bài viết & hồ sơ trong kho', true],
+        ['jobs', 'Lịch sử tác vụ đã xong', true],
+        ['schedules', 'Lịch cào tự động', false],
+        ['outbox', 'Hàng đợi đăng bài (nháp, đã hẹn, đã đăng)', false],
+        ['notifications', 'Thông báo', false],
+      ];
+      const text = `Chọn dữ liệu muốn xóa vĩnh viễn. Cài đặt và phiên đăng nhập được giữ nguyên.
+        <span style="display:inline-flex;flex-direction:column;align-items:flex-start;gap:8px;margin-top:12px">${opts.map(([v, l, on]) => `<label class="row" style="gap:8px;font-weight:700;color:var(--ink)"><input type="checkbox" style="accent-color:var(--pink, #f43f5e)" name="clear-scope" value="${v}" ${on ? 'checked' : ''}/>${l}</label>`).join('')}</span>`;
+      if (!(await confirmBox({ title: 'Xóa dữ liệu?', text, ok: 'Xóa', danger: true, icon: 'trash' }))) return;
+      const scopes = [...document.querySelectorAll('#modal input[name="clear-scope"]:checked')].map((x) => x.value);
+      if (!scopes.length) return toast('Chưa chọn mục nào để xóa', 'info');
+      try {
+        await api('/clear', { method: 'POST', body: { scopes } });
+      } catch (e) {
+        return toast(e.message, 'err');
+      }
       await loadJobs();
-      toast('Đã xóa toàn bộ dữ liệu');
+      if (scopes.includes('schedules')) loadSchedules();
+      if (scopes.includes('outbox') || scopes.includes('notifications')) location.reload();
+      toast('Đã xóa dữ liệu đã chọn');
     },
   };
 

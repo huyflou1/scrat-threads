@@ -2,7 +2,7 @@
 
 const path = require('path');
 const express = require('express');
-const { Store, publicSettings } = require('./src/store');
+const { Store, publicSettings, CLEAR_SCOPES } = require('./src/store');
 const ai = require('./src/ai');
 const threadsApi = require('./src/threads-api');
 const { Outbox } = require('./src/outbox');
@@ -15,12 +15,16 @@ const { Scheduler } = require('./src/schedules');
 const { scheduleNotification } = require('./src/notify');
 const { createAuth } = require('./src/auth');
 const { parseCookies } = require('./src/scraper');
+const { safeFetch } = require('./src/safe-fetch');
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
 const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, 'data', 'db.json');
 
 const store = new Store(DATA_FILE);
+if (store.recovered) {
+  store.addNotification({ kind: 'error', title: 'File dữ liệu bị hỏng nên app bắt đầu với kho trống', body: `File cũ được giữ lại tại ${store.recovered}. Nếu có bản sao lưu, vào Cài đặt → Khôi phục.`, link: '#/settings' });
+}
 const scraper = new Scraper();
 const jobs = new JobManager(store, scraper);
 const scheduler = new Scheduler(store, jobs);
@@ -31,6 +35,9 @@ const outbox = new Outbox(store, {
 });
 
 const app = express();
+// Chạy sau reverse proxy HTTPS (Caddy, Nginx, Cloudflare Tunnel…): đặt TRUST_PROXY=1
+// để app nhận ra kết nối là HTTPS và gắn cờ Secure cho cookie đăng nhập
+if (process.env.TRUST_PROXY) app.set('trust proxy', /^\d+$/.test(process.env.TRUST_PROXY) ? Number(process.env.TRUST_PROXY) : process.env.TRUST_PROXY);
 const auth = createAuth(process.env.APP_PASSWORD || '');
 // Bản khôi phục có thể lớn; các API khác giới hạn 2MB
 const jsonSmall = express.json({ limit: '2mb' });
@@ -217,15 +224,23 @@ app.get('/api/img', async (req, res) => {
   }
   if (url.protocol !== 'https:' || !IMG_HOSTS.test(url.hostname)) return res.status(403).end();
   try {
-    // redirect: 'error' — không để chuyển hướng dẫn ra ngoài danh sách tên miền cho phép
-    const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, redirect: 'error', signal: AbortSignal.timeout(15000) });
-    const type = r.headers.get('content-type') || '';
+    // Theo chuyển hướng nhưng kiểm tra lại tên miền ở mỗi bước; tối đa 25 MB
+    const MAX = 25 * 1024 * 1024;
+    const { res: r, type } = await safeFetch(url.href, { maxBytes: MAX, timeout: 15000, allowHost: (h) => IMG_HOSTS.test(h), headers: { 'User-Agent': 'Mozilla/5.0' } });
     if (!r.ok || !/^(image|video)\//.test(type)) return res.status(r.ok ? 415 : r.status).end();
     res.setHeader('Content-Type', type);
     res.setHeader('Cache-Control', 'private, max-age=86400');
-    res.send(Buffer.from(await r.arrayBuffer()));
-  } catch {
-    res.status(502).end();
+    if (r.headers.get('content-length')) res.setHeader('Content-Length', r.headers.get('content-length'));
+    // Chuyển thẳng dữ liệu cho trình duyệt, không giữ cả file trong RAM
+    let n = 0;
+    for await (const c of r.body) {
+      if ((n += c.length) > MAX) return res.destroy();
+      if (!res.write(c)) await new Promise((ok) => res.once('drain', ok));
+    }
+    res.end();
+  } catch (e) {
+    if (res.headersSent) return res.destroy();
+    res.status(e.tooLarge ? 413 : 502).end();
   }
 });
 
@@ -254,6 +269,14 @@ app.get('/api/ai/models', wrap(() => ({
   postVia: pickMethod(store.getSettings()),
   limit: ai.LIMIT,
 })));
+
+app.post('/api/ai/check', async (req, res) => {
+  try {
+    res.json(await ai.checkModels(store.getSettings().anthropicApiKey));
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
 
 app.post('/api/ai/pick', wrap((req) => ai.pickModel({
   input: req.body.input,
@@ -372,10 +395,12 @@ app.post('/api/demo', wrap(() => {
   return r;
 }));
 
-app.post('/api/clear', wrap(() => {
-  store.clearAll();
+app.post('/api/clear', wrap((req) => {
+  const scopes = Array.isArray(req.body && req.body.scopes) ? req.body.scopes.filter((x) => CLEAR_SCOPES.includes(x)) : undefined;
+  if (scopes && !scopes.length) throw new Error('Chưa chọn mục nào để xóa');
+  const r = store.clearAll(scopes);
   jobs.emit('data');
-  return { ok: true };
+  return r;
 }));
 
 /* ---------- Sự kiện thời gian thực (SSE) ---------- */

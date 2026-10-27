@@ -18,11 +18,13 @@ function loadSdk() {
   return sdk;
 }
 
+// Có thể đổi ID mô hình bằng biến môi trường (MODEL_OPUS, MODEL_SONNET, MODEL_HAIKU)
+// khi Anthropic ra phiên bản mới mà chưa kịp cập nhật app
 const MODELS = [
-  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', tag: 'Chất lượng cao nhất', effort: 'medium', fallback: true },
-  { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', tag: 'Cân bằng tốc độ & chất lượng', effort: 'medium', fallback: true },
+  { id: process.env.MODEL_OPUS || 'claude-opus-5-5', label: 'Claude Opus 5.5', tag: 'Chất lượng cao nhất', effort: 'medium', fallback: true },
+  { id: process.env.MODEL_SONNET || 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', tag: 'Cân bằng tốc độ & chất lượng', effort: 'medium', fallback: true },
   // Haiku 5.5 không có fallback phía máy chủ — không gửi tham số fallbacks
-  { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', tag: 'Nhanh & tiết kiệm', effort: 'low', fallback: false },
+  { id: process.env.MODEL_HAIKU || 'claude-haiku-5-5', label: 'Claude Haiku 5.5', tag: 'Nhanh & tiết kiệm', effort: 'low', fallback: false },
 ];
 
 const TONES = {
@@ -49,9 +51,9 @@ function pickModel({ input = '', length = 'medium', styleExamples = 0 } = {}) {
     return { id: 'claude-opus-5-5', reason: `Opus 5.5 vì ${why}` };
   }
   if (n < 200 && length === 'short') {
-    return { id: 'claude-haiku-5-5', reason: 'Haiku 5.5 vì ý tưởng ngắn, cần bài ngắn — nhanh và rẻ nhất' };
+    return { id: process.env.MODEL_HAIKU || 'claude-haiku-5-5', reason: 'Haiku 5.5 vì ý tưởng ngắn, cần bài ngắn — nhanh và rẻ nhất' };
   }
-  return { id: 'claude-sonnet-5-5', reason: 'Sonnet 5.5 vì nội dung vừa phải — cân bằng chất lượng và tốc độ' };
+  return { id: process.env.MODEL_SONNET || 'claude-sonnet-5-5', reason: 'Sonnet 5.5 vì nội dung vừa phải — cân bằng chất lượng và tốc độ' };
 }
 
 const SCHEMA = {
@@ -130,6 +132,23 @@ function explainError(e) {
 }
 
 /**
+ * Kiểm tra API key và quyền dùng từng mô hình qua Models API (không tốn token).
+ * Trả về [{ id, label, ok, error }].
+ */
+async function checkModels(apiKey) {
+  const Anthropic = loadSdk();
+  const client = new Anthropic(apiKey ? { apiKey } : {});
+  return Promise.all(MODELS.map(async (m) => {
+    try {
+      await client.models.retrieve(m.id);
+      return { id: m.id, label: m.label, ok: true };
+    } catch (e) {
+      return { id: m.id, label: m.label, ok: false, error: explainError(e) };
+    }
+  }));
+}
+
+/**
  * Tạo 3 phương án bài viết.
  * opts: { apiKey, input, tone, length, lang, hashtags, emoji, model ('auto' | id), examples: string[] }
  */
@@ -182,4 +201,4 @@ async function generate(opts) {
   };
 }
 
-module.exports = { MODELS, TONES, LENGTHS, LIMIT, pickModel, generate, parseVariants, buildPrompt, SCHEMA };
+module.exports = { checkModels, MODELS, TONES, LENGTHS, LIMIT, pickModel, generate, parseVariants, buildPrompt, SCHEMA };
