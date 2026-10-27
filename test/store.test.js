@@ -121,3 +121,13 @@ test('file dữ liệu hỏng được giữ lại, không bị ghi đè', () =>
   assert.ok(fs.readFileSync(s.recovered, 'utf8').includes('hỏng'), 'bản hỏng vẫn còn sau khi ghi');
   assert.equal(new Store(file).recovered, undefined);
 });
+
+test('xuất CSV: chặn nội dung bị Excel hiểu thành công thức', () => {
+  const { toCSV } = require('../src/query');
+  const csv = toCSV([{ text: '=1+1', username: '@hack', like_count: -5, hashtags: ['-x'] }, { text: 'bình thường' }], 'posts');
+  assert.ok(csv.includes("'=1+1"));
+  assert.ok(csv.includes("'@hack"));
+  assert.ok(csv.includes("'-x"));
+  assert.ok(csv.includes(',-5,'), 'số âm giữ nguyên');
+  assert.ok(!/,=1\+1/.test(csv));
+});

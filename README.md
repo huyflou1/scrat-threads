@@ -10,7 +10,7 @@
 | **Cào dữ liệu** | 4 chế độ: **Hồ sơ**, **Bài viết** (kèm trả lời), **Từ khóa**, **Hàng loạt** (trộn tài khoản và link) |
 | **Đăng bài** | Nhập ý tưởng → Claude viết **3 phương án** (chọn giọng văn, độ dài, bài đơn hoặc chuỗi thread, ngôn ngữ, hashtag/emoji, học giọng văn từ một tài khoản trong kho). Chọn mô hình **Opus 5.5 / Sonnet 5.5 / Haiku 5.5** hoặc **Tự động** theo nội dung. Sửa bản đăng với bộ đếm 500 ký tự (emoji tính theo byte như Threads), thêm ảnh, **đăng ngay** hoặc **hẹn giờ** (có gợi ý *giờ vàng* từ bản đồ giờ đăng). Tab **Hàng đợi đăng**: nháp, đã hẹn, đã đăng, lỗi; tự thử lại khi lỗi tạm thời |
 | **Tác vụ** | Tab **Hàng đợi**: chạy song song có giới hạn, tiến độ và nhật ký cập nhật trực tiếp (SSE), dừng / chạy lại. Tab **Lịch tự động**: cào lại định kỳ (mỗi giờ, 6 giờ, hằng ngày, hằng tuần), bật/tắt, đổi chu kỳ, chạy ngay |
-| **Kho dữ liệu** | Bài viết và hồ sơ; ngăn chi tiết hồ sơ có biểu đồ người theo dõi theo thời gian, lượt thích trung bình, tỉ lệ tương tác, bài nổi bật và nút *Theo dõi hằng ngày*; tìm kiếm không dấu, lọc theo tác giả / media / lượt thích / ngày, dạng thẻ hoặc bảng, chọn nhiều để xuất, xóa hoặc **cào trả lời hàng loạt** cho các bài đã chọn, menu **Xuất file**: **Excel (.xlsx)** có dòng tiêu đề cố định và bộ lọc, **CSV** (UTF-8 BOM), **JSON** |
+| **Kho dữ liệu** | Bài viết và hồ sơ; ngăn chi tiết hồ sơ có biểu đồ người theo dõi theo thời gian, lượt thích trung bình, tỉ lệ tương tác, bài nổi bật và nút *Theo dõi hằng ngày*; tìm kiếm không dấu, lọc theo tác giả / media / lượt thích / ngày, dạng thẻ hoặc bảng, chọn nhiều để xuất, xóa hoặc **cào trả lời hàng loạt** cho các bài đã chọn, menu **Xuất file**: **Excel (.xlsx)** có dòng tiêu đề cố định và bộ lọc, **CSV** (UTF-8 BOM, chặn nội dung bị Excel hiểu thành công thức), **JSON** |
 | **Cài đặt** | **Đăng nhập bằng cửa sổ trình duyệt** (tự lấy cookie) hoặc dán cookie thủ công, chạy ẩn trình duyệt, độ trễ, số lần cuộn, proxy, User-Agent, giao diện, dữ liệu mẫu, **sao lưu / khôi phục toàn bộ**: kho, lịch, hàng đợi đăng, thông báo, lịch sử tác vụ và cài đặt (gộp, không xóa dữ liệu hiện có; không kèm cookie và khóa bí mật), **xóa dữ liệu theo mục** |
 
 **Thông báo** (biểu tượng chuông): khi lịch tự động tìm thấy bài mới, khi bài hẹn giờ đã đăng hoặc đăng lỗi, Scrat báo trong app và — nếu bạn cho phép — báo ra máy tính khi đang ở tab khác.
@@ -90,6 +90,7 @@ Với Opus và Sonnet, nếu bộ lọc an toàn từ chối nhầm, Anthropic t
 - Bài hẹn giờ chỉ được đăng khi app đang chạy.
 - Lỗi tạm thời (mạng chập chờn, bị giới hạn tốc độ) được thử lại tối đa 3 lần.
 - Nếu app tắt giữa lúc đang đăng, bài chuyển sang trạng thái *Lỗi* để bạn kiểm tra trước khi thử lại, tránh đăng trùng.
+- Chống đăng trùng khi mất mạng (Threads API): app lưu mã container trước khi bấm đăng. Khi thử lại, app hỏi Threads xem container đó đã đăng chưa. Nếu đã đăng, app tìm lại mã bài thay vì đăng thêm lần nữa.
 - Chuỗi thread bị lỗi giữa chừng sẽ đăng tiếp từ phần còn thiếu.
 - Ảnh đính kèm phải là link `https` công khai, vì Threads tự tải ảnh từ link đó. Khi đăng bằng trình duyệt, app tải ảnh về (tối đa 10 MB, không tải từ địa chỉ mạng nội bộ) rồi xóa file tạm sau khi đăng.
 

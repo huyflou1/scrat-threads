@@ -83,7 +83,9 @@ function cell(v) {
   if (v == null) return '';
   if (Array.isArray(v)) v = v.map((x) => (typeof x === 'object' ? x.url : x)).join(' | ');
   else if (typeof v === 'boolean') v = v ? 'có' : 'không';
-  const s = String(v);
+  let s = String(v);
+  // Chặn CSV injection: ô bắt đầu bằng = + - @ (hoặc tab/CR) bị Excel hiểu thành công thức
+  if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s)) s = "'" + s;
   return /[",\n\r;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 

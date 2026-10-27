@@ -87,7 +87,7 @@ class Outbox {
     if (!post) return null;
     if (post.status === 'publishing') throw new Error('Bài đang được đăng, chờ một chút');
     if (post.status === 'published') throw new Error('Bài đã đăng, không sửa được nữa');
-    if (post.media_ids.length && raw.parts) throw new Error('Bài đã đăng được một phần — chỉ có thể thử lại phần còn lại');
+    if ((post.media_ids.length || post.pending) && raw.parts) throw new Error('Bài có thể đã lên Threads một phần — chỉ có thể thử lại phần còn lại');
     Object.assign(post, this.clean(raw, post));
     if ('scheduled_at' in raw) post.status = post.scheduled_at ? 'scheduled' : 'draft';
     post.error = null;
@@ -134,7 +134,7 @@ class Outbox {
           : 'Chưa có cách đăng bài: đăng nhập Threads trong Cài đặt (hoặc nhập Threads access token)');
       }
       // Đổi cách đăng giữa chừng thì mã bài cũ không dùng chung được
-      if (post.method && post.method !== method && post.media_ids.length) {
+      if (post.method && post.method !== method && (post.media_ids.length || post.pending)) {
         throw new threads.ThreadsError('Bài đã đăng dở bằng cách khác — kiểm tra trên Threads rồi tạo bài mới cho phần còn lại');
       }
       post.method = method;
@@ -142,7 +142,10 @@ class Outbox {
         parts: post.parts,
         imageUrl: post.image_url,
         done: post.media_ids,
+        pending: post.pending || null,
         onPart: (got) => { post.media_ids = got; this.save(post); },
+        // Lưu ngay container sắp publish: lỗi mạng sau đó vẫn đối soát được, không đăng trùng
+        onContainer: (c) => { post.pending = c; this.store.save(); this.store.flush(); },
       };
       const { ids, permalink } = method === 'browser'
         ? await this.browser(settings, opts)

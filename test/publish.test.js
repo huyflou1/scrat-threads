@@ -17,7 +17,10 @@ async function fakeServer(handler) {
       const call = { method: req.method, url: req.url, headers: req.headers, raw };
       try { call.body = JSON.parse(raw); } catch { call.body = Object.fromEntries(new URLSearchParams(raw)); }
       calls.push(call);
-      const [status, json] = handler(call, calls.length);
+      const out = handler(call, calls.length);
+      // 'DROP': máy chủ đã xử lý nhưng cắt kết nối trước khi trả lời
+      if (out === 'DROP') return req.socket.destroy();
+      const [status, json] = out;
       res.writeHead(status, { 'content-type': 'application/json' });
       res.end(JSON.stringify(json));
     });
@@ -171,6 +174,58 @@ test('đăng tiếp từ phần dở dang; báo lỗi token hết hạn và lỗ
     await assert.rejects(api.publish('tok', { parts: ['x'], wait: noWait }), (e) => e.transient === true);
     await assert.rejects(api.publish('tok', { parts: ['😀'.repeat(130)], wait: noWait }), /520\/500/);
     await assert.rejects(api.publish('', { parts: ['x'], wait: noWait }), /Chưa có Threads access token/);
+  });
+});
+
+test('mất phản hồi khi publish: lần thử lại đối soát container, không đăng trùng', async () => {
+  // Threads giả: publish lần đầu thành công nhưng cắt kết nối
+  const published = [];
+  let n = 0;
+  let drop = true;
+  await withThreads((c) => {
+    if (c.method === 'POST' && c.url === '/me/threads') return [200, { id: `c${++n}` }];
+    if (c.url === '/me/threads_publish') {
+      published.push(c.body.creation_id);
+      if (drop) { drop = false; return 'DROP'; }
+      return [200, { id: `m-${c.body.creation_id}` }];
+    }
+    const id = c.url.split('?')[0].slice(1);
+    if (c.url.startsWith('/me/threads?')) return [200, { data: published.map((cid, i) => ({ id: `m-${cid}`, text: i === 0 ? 'Phần 1' : 'Phần 2', timestamp: new Date().toISOString() })) }];
+    if (c.url.startsWith('/me/replies')) return [200, { data: [] }];
+    if (/^c\d+$/.test(id)) return [200, { status: published.includes(id) ? 'PUBLISHED' : 'FINISHED' }];
+    return [200, {}];
+  }, async (api, srv) => {
+    const { box, store } = outboxEnv(api);
+    const p = box.create({ parts: ['Phần 1', 'Phần 2'] });
+    await box.publishNow(p.id);
+    assert.equal(p.status, 'scheduled', 'lỗi mạng: hẹn thử lại');
+    assert.equal(p.pending.id, 'c1', 'đã lưu container trước khi publish');
+    await box.publishNow(p.id);
+    assert.equal(p.status, 'published');
+    assert.deepEqual(p.media_ids, ['m-c1', 'm-c2'], 'tìm lại được mã bài phần 1');
+    assert.deepEqual(published, ['c1', 'c2'], 'mỗi phần chỉ publish một lần');
+    assert.equal(srv.calls.filter((c) => c.method === 'POST' && c.url === '/me/threads').length, 2, 'không tạo container mới cho phần 1');
+    assert.equal(p.pending, null);
+    assert.throws(() => box.update(p.id, { parts: ['sửa'] }), /đã đăng/);
+    clearTimeout(store.timer);
+  });
+});
+
+test('container còn FINISHED khi thử lại thì publish đúng container cũ; đã đăng mà không tìm thấy thì dừng', async () => {
+  let status = 'FINISHED';
+  await withThreads((c) => {
+    if (c.method === 'POST' && c.url === '/me/threads') return [200, { id: 'cNEW' }];
+    if (c.url === '/me/threads_publish') return [200, { id: `m-${c.body.creation_id}` }];
+    if (c.url.startsWith('/cOLD')) return [200, { status }];
+    if (c.url.startsWith('/me/')) return [200, { data: [] }];
+    return [200, { status: 'FINISHED' }];
+  }, async (api, srv) => {
+    const pending = { index: 0, id: 'cOLD', text: 'abc', created_at: new Date().toISOString() };
+    const r = await api.publish('tok', { parts: ['abc'], pending, wait: noWait });
+    assert.deepEqual(r.ids, ['m-cOLD']);
+    assert.equal(srv.calls.filter((c) => c.method === 'POST' && c.url === '/me/threads').length, 0);
+    status = 'PUBLISHED';
+    await assert.rejects(api.publish('tok', { parts: ['abc'], pending, wait: noWait }), (e) => /đừng đăng lại/.test(e.message) && !e.transient);
   });
 });
 
