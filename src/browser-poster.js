@@ -15,7 +15,7 @@ const { harvest, safeParse } = require('./extract');
 const { ThreadsError } = require('./threads-api');
 const { safeFetch } = require('./safe-fetch');
 
-const DEBUG_DIR = process.env.DEBUG_DIR || path.join(path.dirname(process.env.DATA_FILE || path.join(__dirname, '..', 'data', 'db.json')), 'debug');
+const DEBUG_DIR = process.env.DEBUG_DIR || path.join(path.dirname(process.env.DATA_FILE || path.join(__dirname, '..', 'data', 'scrat.db')), 'debug');
 const DEFAULT_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36';
 

@@ -19,7 +19,7 @@ Phím tắt: `Ctrl/⌘ K` mở bảng lệnh (dán link vào là cào luôn) · 
 
 ## Cài đặt & chạy
 
-Cần **Node.js 20 trở lên** ([tải bản LTS](https://nodejs.org)).
+Cần **Node.js 22.13 trở lên** ([tải bản LTS](https://nodejs.org)). App dùng SQLite có sẵn trong Node, không cần cài thêm gì.
 
 **Cách nhanh nhất:** nhấp đúp vào `start.bat` (Windows) hoặc `start.command` (macOS). Lần đầu file sẽ tự cài thư viện và Chromium, sau đó tự mở trình duyệt. Trên Linux thì chạy `./start.sh`.
 
@@ -32,13 +32,16 @@ npm start          # mở http://127.0.0.1:3000
 ```
 
 Biến môi trường:
-- `PORT` (mặc định 3000), `HOST` (mặc định 127.0.0.1), `DATA_FILE` (mặc định `data/db.json`).
+- `PORT` (mặc định 3000), `HOST` (mặc định 127.0.0.1), `DATA_FILE` (file SQLite, mặc định `data/scrat.db`).
 - `APP_PASSWORD`: bật mật khẩu cho app.
 - `TRUST_PROXY`: đặt `1` khi chạy sau reverse proxy HTTPS, để cookie đăng nhập có cờ `Secure`.
 - `MODEL_OPUS`, `MODEL_SONNET`, `MODEL_HAIKU`: đổi ID mô hình Claude khi Anthropic ra bản mới.
 - `DEBUG_DIR`: nơi lưu ảnh chụp màn hình khi đăng bài lỗi (mặc định `data/debug/`).
 
-Nếu `data/db.json` bị hỏng (ví dụ máy tắt đột ngột), app đổi tên nó thành `db.json.corrupt-<thời gian>` rồi chạy với kho trống, không ghi đè file cũ. App cũng hiện thông báo để bạn khôi phục từ bản sao lưu.
+**Lưu trữ:** dữ liệu nằm trong file SQLite `data/scrat.db`.
+- Mỗi lần lưu chỉ ghi các bài viết và hồ sơ vừa thay đổi, nên kho vài trăm nghìn bài vẫn ghi nhanh. Thử với 50.000 bài: ghi thêm 1 bài mất khoảng 1 ms, mở app khoảng 0,5 giây.
+- Nâng cấp từ bản cũ: lần đầu chạy, app tự chuyển dữ liệu từ `data/db.json` sang SQLite và giữ file cũ thành `db.json.migrated`.
+- Nếu file dữ liệu bị hỏng, app đổi tên nó thành `*.corrupt-<thời gian>` rồi chạy với kho trống, không ghi đè file cũ. App cũng hiện thông báo để bạn khôi phục từ bản sao lưu.
 
 ### Truy cập từ xa (cho chính bạn)
 
@@ -53,7 +56,7 @@ HOST=0.0.0.0 APP_PASSWORD='mật-khẩu-của-bạn' npm start
 - Người vào app sẽ phải nhập mật khẩu ở trang đăng nhập. Phiên đăng nhập kéo dài 30 ngày và vẫn còn sau khi khởi động lại app. Đổi mật khẩu thì mọi phiên cũ bị đăng xuất.
 - Mỗi IP được thử sai tối đa 8 lần trong 5 phút.
 - Khi chạy qua Internet, hãy đặt app sau HTTPS (ví dụ Caddy, Nginx hoặc Cloudflare Tunnel) và thêm `TRUST_PROXY=1`.
-- Khóa API, token và cookie lưu dạng chữ thường trong `data/db.json`: giữ thư mục `data/` kín, đừng đồng bộ lên cloud công khai.
+- Khóa API, token và cookie lưu dạng chữ thường trong `data/scrat.db`: giữ thư mục `data/` kín, đừng đồng bộ lên cloud công khai.
 
 ### Viết bài bằng AI & đăng lên Threads
 
@@ -96,7 +99,7 @@ Kiểm thử: `npm test`.
 
 - Playwright mở Threads bằng Chromium (chặn ảnh và font để chạy nhanh hơn).
 - Dữ liệu được đọc từ JSON ẩn trong trang (`script[type="application/json"]`) và từ các phản hồi `/graphql` khi cuộn trang. Bộ trích xuất (`src/extract.js`) duyệt toàn bộ cây JSON và nhận diện object có dạng bài viết hoặc hồ sơ, nên vẫn chạy được khi Threads đổi cấu trúc.
-- Kết quả được lưu vào `data/db.json` ngay trong lúc cào. Ảnh từ CDN của Meta được tải qua `/api/img` vì CDN chặn tải từ trang khác.
+- Kết quả được lưu vào `data/scrat.db` ngay trong lúc cào. Ảnh từ CDN của Meta được tải qua `/api/img` vì CDN chặn tải từ trang khác.
 
 ## Lưu ý
 
@@ -108,20 +111,26 @@ Kiểm thử: `npm test`.
 ## Cấu trúc
 
 ```
-server.js          API Express + SSE + proxy ảnh
-src/extract.js     Trích xuất & chuẩn hóa bài viết / hồ sơ (thuần, có test)
-src/scraper.js     Điều khiển trình duyệt Playwright
-src/jobs.js        Hàng đợi tác vụ, tiến độ, nhật ký
-src/schedules.js   Lịch cào tự động theo chu kỳ
-src/notify.js      Quy tắc tạo thông báo khi lịch có bài mới / lỗi
-src/xlsx.js        Ghi file Excel .xlsx không cần thư viện ngoài
-src/ai.js          Viết bài bằng Claude, chọn mô hình theo nội dung
-src/threads-api.js Đăng bài / chuỗi thread qua Threads API, đếm ký tự kiểu Threads
-src/outbox.js      Hàng đợi đăng bài, hẹn giờ, thử lại
-src/browser-poster.js Đăng bài bằng phiên đăng nhập qua web intent của Threads
-src/auth.js        Mật khẩu app (cookie ký HMAC, giới hạn số lần thử)
-src/store.js       Lưu trữ bằng file JSON (ghi nguyên tử, giữ lại file hỏng)
-src/safe-fetch.js  Tải file ngoài có giới hạn dung lượng, kiểm tra chuyển hướng và IP nội bộ
-src/query.js       Lọc, sắp xếp, xuất CSV/JSON/Excel
-public/            Giao diện (HTML/CSS/JS thuần, không cần build)
+server.js              Khởi động: createApp() rồi listen
+src/app.js             Dựng app: kho dữ liệu, hàng đợi, lịch, SSE, nạp các route
+src/routes/            API chia theo nhóm: stats, jobs, library, compose, system
+src/extract.js         Trích xuất & chuẩn hóa bài viết / hồ sơ (thuần, có test)
+src/scraper.js         Điều khiển trình duyệt Playwright
+src/jobs.js            Hàng đợi tác vụ, tiến độ, nhật ký
+src/schedules.js       Lịch cào tự động theo chu kỳ
+src/notify.js          Quy tắc tạo thông báo khi lịch có bài mới / lỗi
+src/xlsx.js            Ghi file Excel .xlsx không cần thư viện ngoài
+src/ai.js              Viết bài bằng Claude, chọn mô hình theo nội dung
+src/threads-api.js     Đăng bài / chuỗi thread qua Threads API, đếm ký tự kiểu Threads
+src/outbox.js          Hàng đợi đăng bài, hẹn giờ, thử lại
+src/browser-poster.js  Đăng bài bằng phiên đăng nhập qua web intent của Threads
+src/auth.js            Mật khẩu app (cookie ký HMAC, giới hạn số lần thử)
+src/store.js           Lưu trữ SQLite (chỉ ghi phần thay đổi, tự chuyển từ db.json cũ)
+src/safe-fetch.js      Tải file ngoài có giới hạn dung lượng, kiểm tra chuyển hướng và IP nội bộ
+src/query.js           Lọc, sắp xếp, giờ vàng, xuất CSV/JSON/Excel
+public/                Giao diện (HTML/CSS/JS thuần, không cần build)
+public/js/main.js      Điểm vào: sự kiện thời gian thực, khởi động
+public/js/             Module dùng chung: config, state, utils, ui, shell (router),
+                       theme, notifs, palette (Ctrl+K), actions (xử lý nút bấm)
+public/js/pages/       Từng trang: home, scrape, compose, jobs, library, settings
 ```

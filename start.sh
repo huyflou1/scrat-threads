@@ -6,9 +6,8 @@ if ! command -v node >/dev/null 2>&1; then
   echo "❌ Chưa có Node.js. Tải bản LTS tại https://nodejs.org rồi chạy lại."
   read -r -p "Nhấn Enter để đóng…" _; exit 1
 fi
-NODE_MAJOR=$(node -p 'process.versions.node.split(".")[0]')
-if [ "$NODE_MAJOR" -lt 20 ]; then
-  echo "❌ Cần Node.js 20 trở lên (máy đang có $(node -v))."
+if ! node -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>22||(a===22&&b>=13)?0:1)'; then
+  echo "❌ Cần Node.js 22.13 trở lên (máy đang có $(node -v))."
   read -r -p "Nhấn Enter để đóng…" _; exit 1
 fi
 

@@ -1,12 +1,35 @@
 'use strict';
 
 /**
- * Kho dữ liệu dạng file JSON, ghi trễ (debounce) và ghi nguyên tử.
- * Đủ nhanh cho vài chục nghìn bài viết, không cần module native.
+ * Kho dữ liệu SQLite (node:sqlite có sẵn trong Node ≥ 22.13, không cần module native).
+ * - Dữ liệu được giữ trong bộ nhớ ở `store.data` để đọc/lọc nhanh như trước.
+ * - Mỗi lần lưu (ghi trễ 300ms) chỉ ghi các bài viết / hồ sơ ĐÃ ĐỔI trong một transaction,
+ *   không ghi lại toàn bộ như file JSON. SQLite (chế độ WAL) bảo đảm không hỏng file khi tắt đột ngột.
+ * - Lần đầu chạy, dữ liệu cũ trong db.json được chuyển sang và file cũ đổi tên thành db.json.migrated.
  */
 
 const fs = require('fs');
 const path = require('path');
+
+let DatabaseSync;
+function loadSqlite() {
+  if (DatabaseSync) return DatabaseSync;
+  // Node 22 in cảnh báo "SQLite is an experimental feature" — tính năng đã ổn định cho nhu cầu này
+  const emit = process.emitWarning;
+  process.emitWarning = (w, ...a) => (String(w && w.message ? w.message : w).includes('SQLite') ? undefined : emit.call(process, w, ...a));
+  try {
+    ({ DatabaseSync } = require('node:sqlite'));
+  } catch {
+    throw new Error(`Cần Node.js 22.13 trở lên để lưu dữ liệu bằng SQLite (máy đang có ${process.version}). Tải bản LTS mới tại https://nodejs.org`);
+  } finally {
+    process.emitWarning = emit;
+  }
+  return DatabaseSync;
+}
+
+const SMALL = ['jobs', 'schedules', 'outbox', 'notifications', 'settings'];
+const stamp = () => new Date().toISOString().replace(/[:.]/g, '-');
+const strip = (v) => JSON.stringify(v, (k, x) => (k[0] === '_' ? undefined : x));
 
 const DEFAULT_SETTINGS = {
   headless: true,
@@ -37,46 +60,126 @@ function publicSettings(s) {
 }
 
 class Store {
+  /**
+   * `file`: đường dẫn file SQLite (vd: data/scrat.db). Nếu là đường dẫn .json (kiểu cũ),
+   * dữ liệu lưu ở file .sqlite cùng tên và file .json được chuyển sang khi chưa có.
+   */
   constructor(file) {
-    this.file = file;
+    const json = /\.json$/i.test(file);
+    this.file = json ? file.replace(/\.json$/i, '.sqlite') : file;
+    this.legacyFile = json ? file : path.join(path.dirname(file), 'db.json');
     this.timer = null;
-    this.data = { posts: {}, profiles: {}, jobs: [], schedules: [], notifications: [], outbox: [], settings: { ...DEFAULT_SETTINGS } };
+    this.dirty = { posts: new Set(), profiles: new Set() };
+    this.replaced = { posts: false, profiles: false };
+    this.written = {};
+    this.data = this.makeData({}, {});
+    this.open();
     this.load();
   }
 
-  load() {
+  /** store.data giống hệt kiểu cũ; posts/profiles được theo dõi để chỉ ghi phần đã đổi. */
+  makeData(posts, profiles) {
+    const self = this;
+    const track = (table, obj) => new Proxy(obj, {
+      set(t, k, v) { t[k] = v; self.dirty[table].add(k); return true; },
+      deleteProperty(t, k) { if (k in t) { delete t[k]; self.dirty[table].add(k); } return true; },
+    });
+    let p = track('posts', posts);
+    let u = track('profiles', profiles);
+    return {
+      get posts() { return p; },
+      set posts(v) { self.replaced.posts = true; self.dirty.posts.clear(); p = track('posts', { ...v }); for (const k of Object.keys(v)) self.dirty.posts.add(k); },
+      get profiles() { return u; },
+      set profiles(v) { self.replaced.profiles = true; self.dirty.profiles.clear(); u = track('profiles', { ...v }); for (const k of Object.keys(v)) self.dirty.profiles.add(k); },
+      jobs: [], schedules: [], outbox: [], notifications: [],
+      settings: { ...DEFAULT_SETTINGS },
+    };
+  }
+
+  open() {
+    const Db = loadSqlite();
+    fs.mkdirSync(path.dirname(this.file), { recursive: true });
+    const fresh = !fs.existsSync(this.file);
     try {
-      const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
-      this.data = {
-        posts: raw.posts || {},
-        profiles: raw.profiles || {},
-        jobs: raw.jobs || [],
-        schedules: raw.schedules || [],
-        outbox: raw.outbox || [],
-        notifications: raw.notifications || [],
-        settings: { ...DEFAULT_SETTINGS, ...(raw.settings || {}) },
-      };
-      // Tác vụ đang chạy khi tắt app thì coi như bị gián đoạn
-      for (const j of this.data.jobs) {
-        if (j.status === 'running' || j.status === 'queued') {
-          j.status = 'failed';
-          j.error = 'Ứng dụng đã khởi động lại khi tác vụ đang chạy';
-          j.finished_at = j.finished_at || new Date().toISOString();
-        }
+      this.db = new Db(this.file);
+      if (!fresh) {
+        const r = this.db.prepare('PRAGMA quick_check').get();
+        if (!r || Object.values(r)[0] !== 'ok') throw new Error('kiểm tra toàn vẹn thất bại');
       }
+      this.db.exec(`
+        PRAGMA journal_mode = WAL;
+        PRAGMA synchronous = NORMAL;
+        CREATE TABLE IF NOT EXISTS posts (id TEXT PRIMARY KEY, data TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS profiles (username TEXT PRIMARY KEY, data TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, data TEXT NOT NULL);
+      `);
     } catch (e) {
-      if (e.code === 'ENOENT') return;
-      // File hỏng: đổi tên để giữ lại thay vì để lần ghi sau đè mất
-      const bad = `${this.file}.corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}`;
-      try {
-        fs.renameSync(this.file, bad);
-        this.recovered = bad;
-        console.warn(`[store] file dữ liệu bị hỏng (${e.message}) — đã giữ lại tại ${bad}, bắt đầu với kho trống`);
-      } catch (e2) {
-        // Không đổi tên được thì dừng hẳn, tuyệt đối không ghi đè
-        throw new Error(`Không đọc được ${this.file} (${e.message}) và không sao lưu được file hỏng: ${e2.message}`);
+      // File SQLite hỏng: giữ lại để cứu dữ liệu, tạo file mới
+      try { this.db && this.db.close(); } catch { /* đã đóng */ }
+      const bad = `${this.file}.corrupt-${stamp()}`;
+      for (const ext of ['', '-wal', '-shm']) if (fs.existsSync(this.file + ext)) fs.renameSync(this.file + ext, bad + ext);
+      this.recovered = bad;
+      console.warn(`[store] file dữ liệu bị hỏng (${e.message}) — đã giữ lại tại ${bad}, bắt đầu với kho trống`);
+      return this.open();
+    }
+    const q = (sql) => this.db.prepare(sql);
+    this.sql = {
+      putPost: q('INSERT OR REPLACE INTO posts (id, data) VALUES (?, ?)'),
+      delPost: q('DELETE FROM posts WHERE id = ?'),
+      putProfile: q('INSERT OR REPLACE INTO profiles (username, data) VALUES (?, ?)'),
+      delProfile: q('DELETE FROM profiles WHERE username = ?'),
+      putKv: q('INSERT OR REPLACE INTO kv (key, data) VALUES (?, ?)'),
+    };
+  }
+
+  load() {
+    const empty = !this.db.prepare('SELECT 1 FROM kv LIMIT 1').get() && !this.db.prepare('SELECT 1 FROM posts LIMIT 1').get();
+    if (empty && fs.existsSync(this.legacyFile)) return this.migrate();
+    const posts = {};
+    for (const r of this.db.prepare('SELECT id, data FROM posts').iterate()) posts[r.id] = JSON.parse(r.data);
+    const profiles = {};
+    for (const r of this.db.prepare('SELECT username, data FROM profiles').iterate()) profiles[r.username] = JSON.parse(r.data);
+    const kv = {};
+    for (const r of this.db.prepare('SELECT key, data FROM kv').iterate()) { kv[r.key] = JSON.parse(r.data); this.written[r.key] = r.data; }
+    this.fill({ posts, profiles, ...kv });
+    this.dirty.posts.clear();
+    this.dirty.profiles.clear();
+  }
+
+  /** Nạp dữ liệu thô vào bộ nhớ (dùng chung cho SQLite và file JSON cũ). */
+  fill(raw) {
+    this.data = this.makeData(raw.posts || {}, raw.profiles || {});
+    for (const k of ['jobs', 'schedules', 'outbox', 'notifications']) this.data[k] = Array.isArray(raw[k]) ? raw[k] : [];
+    this.data.settings = { ...DEFAULT_SETTINGS, ...(raw.settings || {}) };
+    // Tác vụ đang chạy khi tắt app thì coi như bị gián đoạn
+    for (const j of this.data.jobs) {
+      if (j.status === 'running' || j.status === 'queued') {
+        j.status = 'failed';
+        j.error = 'Ứng dụng đã khởi động lại khi tác vụ đang chạy';
+        j.finished_at = j.finished_at || new Date().toISOString();
       }
     }
+  }
+
+  /** Chuyển dữ liệu từ db.json (phiên bản cũ) sang SQLite. */
+  migrate() {
+    let raw;
+    try {
+      raw = JSON.parse(fs.readFileSync(this.legacyFile, 'utf8'));
+    } catch (e) {
+      // File hỏng: đổi tên để giữ lại thay vì để lần ghi sau đè mất
+      const bad = `${this.legacyFile}.corrupt-${stamp()}`;
+      fs.renameSync(this.legacyFile, bad);
+      this.recovered = bad;
+      console.warn(`[store] file dữ liệu bị hỏng (${e.message}) — đã giữ lại tại ${bad}, bắt đầu với kho trống`);
+      return;
+    }
+    this.fill(raw);
+    for (const t of ['posts', 'profiles']) for (const k of Object.keys(this.data[t])) this.dirty[t].add(k);
+    this.flush();
+    fs.renameSync(this.legacyFile, this.legacyFile + '.migrated');
+    this.migrated = Object.keys(raw.posts || {}).length;
+    console.log(`[store] đã chuyển ${this.migrated} bài viết từ ${path.basename(this.legacyFile)} sang SQLite (${path.basename(this.file)})`);
   }
 
   save() {
@@ -84,13 +187,40 @@ class Store {
     this.timer = setTimeout(() => this.flush(), 300);
   }
 
+  /** Ghi mọi thay đổi trong một transaction: bài viết/hồ sơ đã đổi + các danh sách nhỏ nếu khác lần trước. */
   flush() {
     clearTimeout(this.timer);
-    fs.mkdirSync(path.dirname(this.file), { recursive: true });
-    const tmp = this.file + '.tmp';
-    // Bỏ các trường nội bộ (bắt đầu bằng "_") như timer của tác vụ
-    fs.writeFileSync(tmp, JSON.stringify(this.data, (k, v) => (k[0] === '_' ? undefined : v)));
-    fs.renameSync(tmp, this.file);
+    if (!this.db) return;
+    const tables = [['posts', 'putPost', 'delPost'], ['profiles', 'putProfile', 'delProfile']];
+    const small = {};
+    this.db.exec('BEGIN');
+    try {
+      for (const [t, put, del] of tables) {
+        if (this.replaced[t]) this.db.exec(`DELETE FROM ${t}`);
+        const obj = this.data[t];
+        for (const k of this.dirty[t]) {
+          if (k in obj) this.sql[put].run(k, strip(obj[k]));
+          else if (!this.replaced[t]) this.sql[del].run(k);
+        }
+      }
+      for (const k of SMALL) {
+        const v = (small[k] = strip(this.data[k]));
+        if (this.written[k] !== v) this.sql.putKv.run(k, v);
+      }
+      this.db.exec('COMMIT');
+    } catch (e) {
+      this.db.exec('ROLLBACK');
+      throw e;
+    }
+    Object.assign(this.written, small);
+    for (const t of ['posts', 'profiles']) { this.dirty[t].clear(); this.replaced[t] = false; }
+  }
+
+  close() {
+    if (!this.db) return;
+    this.flush();
+    this.db.close();
+    this.db = null;
   }
 
   /* ---------- Bài viết ---------- */

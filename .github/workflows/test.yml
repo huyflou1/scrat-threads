@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [20, 22, 24]
+        node: [22, 24]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -23,5 +23,5 @@ jobs:
       - name: Cài Chromium cho test đăng bài bằng trình duyệt
         run: npx playwright install --with-deps chromium
       - name: Kiểm tra cú pháp
-        run: for f in server.js src/*.js public/*.js scripts/*.js; do node --check "$f"; done
+        run: for f in server.js src/*.js src/routes/*.js public/*.js public/js/*.js public/js/pages/*.js scripts/*.js; do node --check "$f"; done
       - run: npm test
