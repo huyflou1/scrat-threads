@@ -122,4 +122,49 @@ function toJSON(rows) {
   return JSON.stringify(rows.map(({ sources, history, ...r }) => r), null, 2);
 }
 
-module.exports = { filterPosts, filterProfiles, toCSV, toJSON, toXLSXFile, engagement };
+/**
+ * Bản đồ giờ đăng & khung giờ vàng.
+ * - So mỗi bài với mức thường của chính tác giả (trung vị), để tài khoản lớn không lấn át.
+ * - Mỗi ô lấy trung vị (không bị một bài viral kéo lệch), rồi "co" về mức trung bình 1×
+ *   khi ít bài: ô 2 bài phải nổi bật hơn hẳn mới thắng ô 10 bài.
+ */
+const median = (a) => {
+  if (!a.length) return 0;
+  const s = [...a].sort((x, y) => x - y);
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+const MAX_LIFT = 5;
+function goldenHours(roots, K = 3) {
+  const byUser = new Map();
+  for (const r of roots) byUser.set(r.user, [...(byUser.get(r.user) || []), r.e]);
+  const userMed = new Map([...byUser].map(([u, es]) => [u, median(es)]));
+  const cells = Array.from({ length: 7 }, () => Array.from({ length: 8 }, () => ({ es: [], rs: [] })));
+  for (const r of roots) {
+    const c = cells[r.d][r.b];
+    c.es.push(r.e);
+    // Tác giả chỉ có 1 bài thì không so được, coi như mức thường (1×).
+    // Mỗi bài tính tối đa 5×: một bài viral không tự biến cả khung giờ thành "vàng"
+    c.rs.push(byUser.get(r.user).length > 1 ? Math.min(MAX_LIFT, (r.e + 1) / (userMed.get(r.user) + 1)) : 1);
+  }
+  const heat = cells.map((row) => row.map(({ es, rs }) => {
+    const n = es.length;
+    const lift = n ? median(rs) : 0;
+    return {
+      n,
+      avg: n ? Math.round(es.reduce((a, b) => a + b, 0) / n) : 0,
+      med: Math.round(median(es)),
+      lift: Math.round(lift * 100) / 100,
+      score: n ? Math.round(((n * lift + K) / (n + K)) * 1000) / 1000 : 0,
+    };
+  }));
+  const flat = heat.flatMap((row, d) => row.map((c, b) => ({ ...c, d, b })));
+  const pool = flat.filter((c) => c.n >= 2);
+  const best = pool.length && roots.length >= 3
+    ? pool.reduce((a, c) => (c.score > a.score || (c.score === a.score && c.n > a.n) ? c : a))
+    : null;
+  if (best) best.confidence = best.n >= 8 && roots.length >= 30 ? 'high' : best.n >= 4 ? 'medium' : 'low';
+  return { heat, best };
+}
+
+module.exports = { goldenHours, median, filterPosts, filterProfiles, toCSV, toJSON, toXLSXFile, engagement };

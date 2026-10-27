@@ -382,7 +382,7 @@
           <div class="list" id="home-jobs">${homeJobs(st.recentJobs)}</div>
         </section>
 
-        ${heatBlock(st.heat)}
+        ${heatBlock(st.heat, st.best)}
 
         <section class="block span-4">
           <div class="block-head">${tile('users', 'sky', 'sm')}<div><h3>Tác giả nổi bật</h3><p>Theo tương tác</p></div></div>
@@ -431,27 +431,30 @@
   const slot = (b) => `${String(b * 3).padStart(2, '0')}–${String(b * 3 + 3).padStart(2, '0')}h`;
 
   /** Bản đồ nhiệt: tương tác trung bình mỗi bài theo ngày trong tuần × khung giờ. */
-  function heatBlock(heat) {
-    const head = `<div class="block-head">${tile('calendar', 'peach', 'sm')}<div><h3>Giờ đăng hiệu quả</h3><p>Tương tác trung bình mỗi bài gốc, theo giờ máy bạn</p></div></div>`;
+  function heatBlock(heat, best) {
+    const head = `<div class="block-head">${tile('calendar', 'peach', 'sm')}<div><h3>Giờ đăng hiệu quả</h3><p>Bài gốc so với mức tương tác thường của chính tác giả, theo giờ máy bạn</p></div></div>`;
     const cells = heat.flatMap((row, d) => row.map((c, b) => ({ ...c, d, b })));
     const total = cells.reduce((a, c) => a + c.n, 0);
     if (total < 3) return `<section class="block span-12">${head}${empty('Chưa đủ dữ liệu', 'Cần ít nhất 3 bài viết có ngày đăng để tìm khung giờ tốt nhất.', '', true)}</section>`;
-    const max = Math.max(1, ...cells.map((c) => c.avg));
-    // Khung tốt nhất: ưu tiên ô có từ 2 bài để tránh một bài “ăn may”
-    const pool = cells.filter((c) => c.n >= 2).length ? cells.filter((c) => c.n >= 2) : cells.filter((c) => c.n);
-    const best = pool.reduce((a, c) => (c.avg > a.avg ? c : a));
+    const lo = Math.min(...cells.filter((c) => c.n).map((c) => c.score));
+    const hi = Math.max(...cells.map((c) => c.score));
     const busiest = cells.reduce((a, c) => (c.n > a.n ? c : a));
+    const CONF = { high: ['c-mint', 'Độ tin cậy cao'], medium: ['c-lemon', 'Độ tin cậy vừa'], low: ['c-pink', 'Ít dữ liệu, chỉ để tham khảo'] };
+    const lift = (x) => `${x.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}×`;
+    const bestBox = best
+      ? `<div class="callout c-mint">${ic('party')}<div><b>Khung giờ vàng</b><br>${DAY_FULL[best.d]}, ${slot(best.b)}<br><span class="muted">Gấp ${lift(best.lift)} mức thường · trung vị ${num(best.med)} tương tác · ${best.n} bài</span><br><span class="status ${CONF[best.confidence][0]}" style="margin-top:6px">${CONF[best.confidence][1]}</span></div></div>`
+      : `<div class="callout c-lemon">${ic('info')}<div><b>Chưa tìm được giờ vàng</b><br><span class="muted">Cần ít nhất một khung giờ có từ 2 bài. Hãy cào thêm bài.</span></div></div>`;
     return `<section class="block span-12">${head}
       <div class="heat-wrap">
         <div class="heat" role="table" aria-label="Bản đồ giờ đăng">
           <span></span>${Array.from({ length: 8 }, (_, b) => `<span class="heat-x">${b * 3}h</span>`).join('')}
           ${heat.map((row, d) => `<span class="heat-y">${DAYS[d]}</span>${row.map((c, b) => {
-            const lvl = c.n ? 0.15 + 0.85 * (c.avg / max) : 0;
-            return `<i class="${c.n ? '' : 'none'} ${best.d === d && best.b === b ? 'best' : ''}" style="--l:${lvl.toFixed(2)}" title="${DAY_FULL[d]}, ${slot(b)}: ${c.n} bài${c.n ? ` · TB ${num(c.avg)} tương tác` : ''}"></i>`;
+            const lvl = c.n ? 0.15 + 0.85 * (hi > lo ? (c.score - lo) / (hi - lo) : 1) : 0;
+            return `<i class="${c.n ? '' : 'none'} ${best && best.d === d && best.b === b ? 'best' : ''}" style="--l:${lvl.toFixed(2)}" title="${DAY_FULL[d]}, ${slot(b)}: ${c.n} bài${c.n ? ` · gấp ${lift(c.lift)} mức thường · trung vị ${num(c.med)} tương tác` : ''}"></i>`;
           }).join('')}`).join('')}
         </div>
         <div class="heat-side">
-          <div class="callout c-mint">${ic('party')}<div><b>Khung giờ vàng</b><br>${DAY_FULL[best.d]}, ${slot(best.b)}<br><span class="muted">TB ${num(best.avg)} tương tác · ${best.n} bài${best.n >= 2 ? ' · chỉ xét ô có từ 2 bài' : ''}</span></div></div>
+          ${bestBox}
           <div class="callout c-sky">${ic('chart')}<div><b>Đăng nhiều nhất</b><br>${DAY_FULL[busiest.d]}, ${slot(busiest.b)}<br><span class="muted">${busiest.n} bài</span></div></div>
           <div class="heat-legend"><span>Ít</span><i style="--l:.15"></i><i style="--l:.45"></i><i style="--l:.75"></i><i style="--l:1"></i><span>Nhiều</span></div>
         </div>
@@ -1388,11 +1391,8 @@
 
   /** Lần kế tiếp của khung giờ vàng (ngày d: 0 = Thứ Hai, khung b: 3 giờ). */
   function nextGolden() {
-    const heat = S.stats && S.stats.heat;
-    if (!heat) return null;
-    const cells = heat.flatMap((row, d) => row.map((c, b) => ({ ...c, d, b }))).filter((c) => c.n >= 2);
-    if (!cells.length) return null;
-    const best = cells.reduce((a, c) => (c.avg > a.avg ? c : a));
+    const best = S.stats && S.stats.best;
+    if (!best) return null;
     const t = new Date();
     t.setSeconds(0, 0);
     for (let i = 0; i < 8; i++) {

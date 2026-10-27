@@ -6,7 +6,7 @@
 
 | Menu | Chức năng |
 | --- | --- |
-| **Tổng quan** | Ô *cào nhanh* tự nhận diện @tên / link / từ khóa, thống kê, biểu đồ 14 ngày, **bản đồ giờ đăng hiệu quả** (ngày × khung 3 giờ, chỉ ra khung giờ vàng), tác giả và hashtag nổi bật, bài hot nhất |
+| **Tổng quan** | Ô *cào nhanh* tự nhận diện @tên / link / từ khóa, thống kê, biểu đồ 14 ngày, **bản đồ giờ đăng hiệu quả** (ngày × khung 3 giờ; khung giờ vàng tính theo mức tương tác thường của từng tác giả, dùng trung vị và có độ tin cậy), tác giả và hashtag nổi bật, bài hot nhất |
 | **Cào dữ liệu** | 4 chế độ: **Hồ sơ**, **Bài viết** (kèm trả lời), **Từ khóa**, **Hàng loạt** (trộn tài khoản và link) |
 | **Đăng bài** | Nhập ý tưởng → Claude viết **3 phương án** (chọn giọng văn, độ dài, bài đơn hoặc chuỗi thread, ngôn ngữ, hashtag/emoji, học giọng văn từ một tài khoản trong kho). Chọn mô hình **Opus 5.5 / Sonnet 5.5 / Haiku 5.5** hoặc **Tự động** theo nội dung. Sửa bản đăng với bộ đếm 500 ký tự (emoji tính theo byte như Threads), thêm ảnh, **đăng ngay** hoặc **hẹn giờ** (có gợi ý *giờ vàng* từ bản đồ giờ đăng). Tab **Hàng đợi đăng**: nháp, đã hẹn, đã đăng, lỗi; tự thử lại khi lỗi tạm thời |
 | **Tác vụ** | Tab **Hàng đợi**: chạy song song có giới hạn, tiến độ và nhật ký cập nhật trực tiếp (SSE), dừng / chạy lại. Tab **Lịch tự động**: cào lại định kỳ (mỗi giờ, 6 giờ, hằng ngày, hằng tuần), bật/tắt, đổi chu kỳ, chạy ngay |

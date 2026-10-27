@@ -41,11 +41,13 @@ async function safeFetch(raw, { maxBytes = 25 * 1024 * 1024, maxRedirects = 3, t
     await checkUrl(url, { allowHost, allowPrivate });
     const res = await fetch(url, { redirect: 'manual', signal, headers });
     if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
+      await res.body?.cancel().catch(() => {});
       if (hop >= maxRedirects) throw new Error('Chuyển hướng quá nhiều lần');
       url = new URL(res.headers.get('location'), url);
       continue;
     }
     const len = Number(res.headers.get('content-length'));
+    if (len > maxBytes) await res.body?.cancel().catch(() => {});
     if (len > maxBytes) throw Object.assign(new Error(`File quá lớn (tối đa ${Math.round(maxBytes / 1048576)} MB)`), { tooLarge: true });
     return {
       res,

@@ -9,7 +9,7 @@ const { Outbox } = require('./src/outbox');
 const { publishViaBrowser, pickMethod } = require('./src/browser-poster');
 const { Scraper } = require('./src/scraper');
 const { JobManager, publicJob } = require('./src/jobs');
-const { filterPosts, filterProfiles, toCSV, toJSON, toXLSXFile, engagement } = require('./src/query');
+const { filterPosts, filterProfiles, toCSV, toJSON, toXLSXFile, engagement, goldenHours } = require('./src/query');
 const { seedDemo } = require('./src/demo');
 const { Scheduler } = require('./src/schedules');
 const { scheduleNotification } = require('./src/notify');
@@ -70,7 +70,7 @@ app.get('/api/stats', wrap((req) => {
   }
   // Bản đồ giờ đăng: 7 ngày × 8 khung 3 giờ, theo múi giờ của người xem
   const tz = Number(req.query.tz) || 0; // phút, giống Date#getTimezoneOffset()
-  const heat = Array.from({ length: 7 }, () => Array.from({ length: 8 }, () => ({ n: 0, e: 0 })));
+  const roots = [];
   const tags = new Map();
   const authors = new Map();
   let likes = 0;
@@ -86,9 +86,7 @@ app.get('/api/stats', wrap((req) => {
     }
     if (p.published_at && !p.parent_code) {
       const local = new Date(Date.parse(p.published_at) - tz * 60000);
-      const cell = heat[(local.getUTCDay() + 6) % 7][Math.floor(local.getUTCHours() / 3)];
-      cell.n++;
-      cell.e += engagement(p);
+      roots.push({ d: (local.getUTCDay() + 6) % 7, b: Math.floor(local.getUTCHours() / 3), e: engagement(p), user: p.username });
     }
     for (const h of p.hashtags || []) tags.set(h, (tags.get(h) || 0) + 1);
     const a = authors.get(p.username) || { username: p.username, full_name: p.full_name, avatar: p.avatar, verified: p.verified, posts: 0, engagement: 0 };
@@ -110,7 +108,7 @@ app.get('/api/stats', wrap((req) => {
       failed: allJobs.filter((j) => j.status === 'failed').length,
     },
     daily: days.map(({ _t, ...d }) => d),
-    heat: heat.map((row) => row.map((c) => ({ n: c.n, avg: c.n ? Math.round(c.e / c.n) : 0 }))),
+    ...goldenHours(roots),
     topAuthors: [...authors.values()].sort((a, b) => b.engagement - a.engagement).slice(0, 5),
     topTags: [...tags.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([tag, count]) => ({ tag, count })),
     topPosts: [...posts].sort((a, b) => engagement(b) - engagement(a)).slice(0, 3),
@@ -233,11 +231,13 @@ app.get('/api/img', async (req, res) => {
     if (r.headers.get('content-length')) res.setHeader('Content-Length', r.headers.get('content-length'));
     // Chuyển thẳng dữ liệu cho trình duyệt, không giữ cả file trong RAM
     let n = 0;
+    const gone = () => res.destroyed || res.writableEnded;
     for await (const c of r.body) {
+      if (gone()) break; // người xem đã đóng trang
       if ((n += c.length) > MAX) return res.destroy();
-      if (!res.write(c)) await new Promise((ok) => res.once('drain', ok));
+      if (!res.write(c)) await new Promise((ok) => { res.once('drain', ok); res.once('close', ok); });
     }
-    res.end();
+    if (!gone()) res.end();
   } catch (e) {
     if (res.headersSent) return res.destroy();
     res.status(e.tooLarge ? 413 : 502).end();

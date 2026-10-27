@@ -305,6 +305,7 @@ class Store {
     const have = new Set(this.data.schedules.map((x) => x.id));
     for (const x of arr(raw.schedules)) {
       if (!x || !str(x.id) || have.has(x.id) || !str(x.type) || !x.raw || !(Number(x.every) >= 15)) continue;
+      have.add(x.id);
       this.data.schedules.push({ ...x, every: Number(x.every), enabled: false, last_job_id: null });
       out.schedules++;
     }
@@ -313,6 +314,7 @@ class Store {
     for (const x of arr(raw.outbox)) {
       const parts = arr(x && x.parts).filter(str);
       if (!x || !str(x.id) || haveOut.has(x.id) || !parts.length) { if (x && !haveOut.has(x.id)) out.skipped++; continue; }
+      haveOut.add(x.id);
       const item = { ...x, parts, media_ids: arr(x.media_ids), attempts: 0 };
       if (item.status !== 'published') {
         // Đăng dở thì để Lỗi cho người dùng kiểm tra; còn lại thành nháp
@@ -327,6 +329,7 @@ class Store {
     const haveN = new Set(this.data.notifications.map((n) => n.id));
     for (const n of arr(raw.notifications)) {
       if (!n || !str(n.id) || haveN.has(n.id) || !str(n.title)) continue;
+      haveN.add(n.id);
       this.data.notifications.push(n);
       out.notifications++;
     }
@@ -335,6 +338,7 @@ class Store {
     const haveJ = new Set(this.data.jobs.map((j) => j.id));
     for (const j of arr(raw.jobs)) {
       if (!j || !str(j.id) || haveJ.has(j.id) || !str(j.type) || j.status === 'running' || j.status === 'queued') continue;
+      haveJ.add(j.id);
       this.data.jobs.push(j);
       out.jobs++;
     }
